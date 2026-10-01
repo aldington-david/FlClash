@@ -47,7 +47,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPECTED_CERTIFICATE_SHA256: ${{ vars.ANDROID_CERTIFICATE_SHA256 }}
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import base64, os
           from pathlib import Path
@@ -60,6 +62,9 @@ jobs:
           Path('android/local.properties').write_text(''.join(f'{key}={prop(os.environ[name])}\n' for key, name in (
               ('storePassword', 'STORE_PASSWORD'), ('keyAlias', 'KEY_ALIAS'), ('keyPassword', 'KEY_PASSWORD'))))
           PY
+          mkdir -p "$RUNNER_TEMP/flclash-signing-diagnostics"
+          keytool -exportcert -keystore android/app/keystore.jks -storetype PKCS12 -alias "$KEY_ALIAS" -storepass:env STORE_PASSWORD -file "$RUNNER_TEMP/flclash-signing-diagnostics/restored-cert.der"
+          python3 "$GITHUB_WORKSPACE/.fork/verify_signing.py" --certificate "$RUNNER_TEMP/flclash-signing-diagnostics/restored-cert.der" | tee "$RUNNER_TEMP/flclash-signing-diagnostics/restored-cert.txt"
 
       - uses: actions/setup-go@v5
         if: steps.prepare.outputs.build == 'true'
@@ -126,14 +131,12 @@ jobs:
           test -s "$apk"
           test "$(find dist -name '*.apk' | wc -l)" -eq 1
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          "$build_tools/apksigner" verify --verbose --print-certs "$apk" > dist/SIGNING-CERTIFICATE.txt
-          [[ "$EXPECTED_CERTIFICATE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'Missing or invalid ANDROID_CERTIFICATE_SHA256 repository variable' >&2; exit 1; }
-          actual_certificate="$(awk -F ': ' '/^Signer #1 certificate SHA-256 digest: / { print tolower($2) }' dist/SIGNING-CERTIFICATE.txt)"
-          test "$actual_certificate" = "${EXPECTED_CERTIFICATE_SHA256,,}" || { echo 'APK signing certificate does not match the configured identity' >&2; exit 1; }
-          "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
-          grep -q "name='com.github.aldingtondavid.flclash'" "$RUNNER_TEMP/apk-badging.txt"
-          grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/apk-badging.txt"
-          grep -q "native-code: 'arm64-v8a'" "$RUNNER_TEMP/apk-badging.txt"
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk" | tee dist/SIGNING-CERTIFICATE.txt "$RUNNER_TEMP/flclash-signing-diagnostics/apk-signing.txt"
+          "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
+          python3 "$GITHUB_WORKSPACE/.fork/verify_signing.py" dist/SIGNING-CERTIFICATE.txt
+          grep -q "name='com.github.aldingtondavid.flclash'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
+          grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
+          grep -q "native-code: 'arm64-v8a'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           cp .fork/provenance.json dist/BUILD-PROVENANCE.json
           (cd dist && sha256sum *.apk > SHA256SUMS)
           python3 - <<'PY'
@@ -163,3 +166,12 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk" dist/SHA256SUMS dist/BUILD-PROVENANCE.json dist/SIGNING-CERTIFICATE.txt
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest --notes-file release.md
+
+      - name: Retain public signing and package diagnostics
+        if: always() && steps.prepare.outputs.build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flclash-signing-diagnostics
+          path: ${{ runner.temp }}/flclash-signing-diagnostics/*.txt
+          if-no-files-found: ignore
+          retention-days: 14
