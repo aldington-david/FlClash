@@ -1,3 +1,14 @@
+<!-- anytls-reality-fork -->
+# AnyTLS + REALITY 自有构建
+
+使用独立包名和固定自有签名，可与官方 FlClash 并存；仅发布 Android arm64 APK。 这是 `aldington-david` 维护的独立版本，非上游官方发行版。
+
+[下载 Releases](https://github.com/aldington-david/FlClash/releases) · [自动构建状态](https://github.com/aldington-david/FlClash/actions) · [构建、签名与复跑说明](.fork/README.md)
+
+默认 `anytls-reality` 分支维护自动化；每个 Release 标签保存对应上游正式版本的定制源码和准确核心版本。下方保留上游说明，其中上游下载入口不会提供本仓库的定制构建。
+
+---
+
 <div>
 
 [**简体中文**](README_zh_CN.md)
