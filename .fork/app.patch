@@ -104,6 +104,15 @@ index 1e795f3..560a3e1 100644
 +    <string name="app_name">FlClash AnyTLS REALITY</string>
      <string name="service_channel_name">FlClash Service</string>
  </resources>
+diff --git a/android/gradle.properties b/android/gradle.properties
+index cac97e8..766cde0 100644
+--- a/android/gradle.properties
++++ b/android/gradle.properties
+@@ -4,3 +4,4 @@ android.useAndroidX=true
+ android.builtInKotlin=false
+ # This newDsl flag was added automatically by Flutter migrator
+ android.newDsl=false
++force-version-code-ignoring-abi=true
 diff --git a/lib/common/constant.dart b/lib/common/constant.dart
 index 61b91ea..76065bc 100644
 --- a/lib/common/constant.dart

@@ -11,7 +11,7 @@ def verify(report, expected):
     if not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
         raise ValueError("Missing or invalid ANDROID_CERTIFICATE_SHA256 repository variable")
     certificates = {value.lower() for value in re.findall(
-        r"^Signer [^\r\n]+ certificate SHA-256 digest: ([0-9a-fA-F]{64})[ \t]*\r?$",
+        r"^(?:Signer [^\r\n]+|V\d+(?:\.\d+)? Signer[^\r\n]*) certificate SHA-256 digest: ([0-9a-fA-F]{64})[ \t]*\r?$",
         report, re.MULTILINE)}
     if certificates != {expected.lower()}:
         raise ValueError(f"APK certificate mismatch: actual={sorted(certificates)}, expected={expected.lower()}")
@@ -21,8 +21,9 @@ def verify(report, expected):
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         digest = "a" * 64
-        for label in ("#1", "(minSdkVersion=28, maxSdkVersion=32)", "(minSdkVersion=33, maxSdkVersion=2147483647)"):
-            verify(f"Signer {label} certificate SHA-256 digest: {digest}\r\n", digest)
+        for label in ("Signer #1", "Signer (minSdkVersion=28, maxSdkVersion=32)",
+                      "Signer (minSdkVersion=33, maxSdkVersion=2147483647)", "V2 Signer:", "V3.2 Signer:"):
+            verify(f"{label} certificate SHA-256 digest: {digest}\r\n", digest)
         for report in ("", f"Signer #1 certificate SHA-256 digest: {'b' * 64}",
                        f"Signer #1 certificate SHA-256 digest: {digest}\nSigner #2 certificate SHA-256 digest: {'b' * 64}"):
             try:

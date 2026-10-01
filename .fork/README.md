@@ -14,6 +14,8 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 另需仓库变量 `ANDROID_CERTIFICATE_SHA256`，其值为签名证书 SHA-256 的 64 位十六进制串。发布前比较实际 APK 的签名证书指纹，变量为空或不一致时停止发布。
 
+`android/gradle.properties` 使用 Flutter 的 `force-version-code-ignoring-abi=true`，关闭拆分 APK 时默认增加的 ABI 编号偏移，使已安装应用与 Release 正文使用同一个 versionCode。`BUILD-PROVENANCE.json` 同时记录实际源码提交、执行 workflow 的提交及 Actions run URL。这里只固定源码与构建参数，不承诺重新打包后的字节完全一致。
+
 此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。
