@@ -1,0 +1,161 @@
+name: Sync and release AnyTLS REALITY
+
+on:
+  push:
+    branches: [anytls-reality]
+    paths: ['.fork/**', '.github/workflows/anytls-release.yml']
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anytls-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_SOURCE: ${{ github.workspace }}/_release
+      GOTOOLCHAIN: local
+      GOTELEMETRY: 'off'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare pinned upstream and core sources
+        id: prepare
+        run: python3 .fork/prepare.py
+
+      - uses: actions/setup-java@v4
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore the independent Android signing identity
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          for name in ('KEYSTORE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'):
+              if not os.environ.get(name):
+                  raise SystemExit(f'Missing repository secret: {name}')
+          Path('android/app/keystore.jks').write_bytes(base64.b64decode(os.environ['KEYSTORE'], validate=True))
+          def prop(value):
+              return value.replace('\\', '\\\\').replace(' ', '\\ ').replace('\n', '\\n').replace('\r', '\\r')
+          Path('android/local.properties').write_text(''.join(f'{key}={prop(os.environ[name])}\n' for key, name in (
+              ('storePassword', 'STORE_PASSWORD'), ('keyAlias', 'KEY_ALIAS'), ('keyPassword', 'KEY_PASSWORD'))))
+          PY
+
+      - uses: actions/setup-go@v5
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          go-version: ${{ steps.prepare.outputs.go_version }}
+          cache-dependency-path: _release/core/go.sum
+
+      - uses: nttld/setup-ndk@v1
+        if: steps.prepare.outputs.build == 'true'
+        id: ndk
+        with:
+          ndk-version: ${{ steps.prepare.outputs.ndk_version }}
+          add-to-path: true
+          link-to-sdk: true
+
+      - name: Test AnyTLS REALITY and FlClash core compatibility
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release/core
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          go -C Clash.Meta test ./adapter/outbound -run '^TestAnyTLSReality' -count=1 -timeout=90s
+          CGO_ENABLED=0 go test -mod=mod -count=1 .
+          CGO_ENABLED=0 go vet -mod=mod .
+          export CGO_ENABLED=1 GOOS=android GOARCH=arm64
+          export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          go build -mod=mod -tags=with_gvisor -buildmode=c-shared -o "$RUNNER_TEMP/libclash-check.so" .
+
+      - uses: subosito/flutter-action@v2
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          channel: master
+          flutter-version: ${{ steps.prepare.outputs.flutter_version }}
+          cache: true
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.prepare.outputs.build == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          workspaces: _release/plugins/rust_api/rust
+
+      - name: Build the arm64 APK with the patched source core
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          flutter pub get
+          dart format lib/common/request.dart
+          dart setup.dart android --arch arm64 --env stable -v
+
+      - name: Verify artifact, signature, package identity, and release metadata
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        env:
+          APP_VERSION: ${{ steps.prepare.outputs.version }}
+          VERSION_CODE: ${{ steps.prepare.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          apk="dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk"
+          test -s "$apk"
+          test "$(find dist -name '*.apk' | wc -l)" -eq 1
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk" > dist/SIGNING-CERTIFICATE.txt
+          "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          grep -q "name='com.github.aldingtondavid.flclash'" "$RUNNER_TEMP/apk-badging.txt"
+          grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/apk-badging.txt"
+          grep -q "native-code: 'arm64-v8a'" "$RUNNER_TEMP/apk-badging.txt"
+          cp .fork/provenance.json dist/BUILD-PROVENANCE.json
+          (cd dist && sha256sum *.apk > SHA256SUMS)
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('.fork/provenance.json').read_text())
+          Path('release.md').write_text(
+              f"FlClash {p['app_tag']} with AnyTLS + REALITY.\n\n"
+              f"Android version code: {p['version_code']}\n\n"
+              f"App source: https://github.com/{p['app_repository']}/tree/{p['app_sha']}\n\n"
+              f"Core source: https://github.com/{p['core_repository']}/tree/{p['core_sha']}\n\n"
+              f"FlClash compatibility patch: https://github.com/{p['compatibility_repository']}/commit/{p['compatibility_sha']}\n\n"
+              "Independent package: `com.github.aldingtondavid.flclash`. Signed with this fork's stable key; can coexist with upstream.\n\n"
+              "This build has no Firebase analytics or crash reporting. See BUILD-PROVENANCE.json for exact source pins.\n")
+          PY
+
+      - name: Publish only the verified release assets
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          APP_VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "FlClash ${APP_VERSION} · AnyTLS REALITY" --notes-file release.md
+          fi
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk" dist/SHA256SUMS dist/BUILD-PROVENANCE.json dist/SIGNING-CERTIFICATE.txt
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest --notes-file release.md
