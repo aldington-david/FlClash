@@ -1,0 +1,163 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index 4079987..694fee3 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -4,8 +4,6 @@ import java.util.Properties
+ plugins {
+     id("com.android.application")
+     id("dev.flutter.flutter-gradle-plugin")
+-    id("com.google.gms.google-services")
+-    id("com.google.firebase.crashlytics")
+ }
+ 
+ val localProperties = Properties().apply {
+@@ -35,7 +33,7 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "com.follow.clash"
++        applicationId = "com.github.aldingtondavid.flclash"
+         minSdk = flutter.minSdkVersion
+         targetSdk = libs.versions.targetSdk.get().toInt()
+         versionCode = flutter.versionCode
+@@ -46,6 +44,7 @@ android {
+         if (hasReleaseSigning) {
+             create("release") {
+                 storeFile = releaseStoreFile
++                storeType = "PKCS12"
+                 storePassword = releaseStorePassword
+                 keyAlias = releaseKeyAlias
+                 keyPassword = releaseKeyPassword
+@@ -71,8 +70,7 @@ android {
+             if (hasReleaseSigning) {
+                 signingConfig = signingConfigs.getByName("release")
+             } else {
+-                signingConfig = signingConfigs.getByName("debug")
+-                applicationIdSuffix = ".dev"
++                error("Release signing is required for the AnyTLS REALITY fork")
+             }
+ 
+             proguardFiles(
+@@ -107,9 +105,6 @@ dependencies {
+     implementation(libs.smali.dexlib2) {
+         exclude(group = "com.google.guava", module = "guava")
+     }
+-    implementation(platform(libs.firebase.bom))
+-    implementation(libs.firebase.crashlytics.ndk)
+-    implementation(libs.firebase.analytics)
+     testImplementation(libs.junit)
+     testImplementation(libs.kotlinx.coroutines.test)
+ }
+diff --git a/android/common/build.gradle.kts b/android/common/build.gradle.kts
+index 352920b..32d4f5b 100644
+--- a/android/common/build.gradle.kts
++++ b/android/common/build.gradle.kts
+@@ -32,8 +32,5 @@ kotlin {
+ dependencies {
+     implementation(libs.androidx.core)
+     implementation(libs.gson)
+-    implementation(platform(libs.firebase.bom))
+-    implementation(libs.firebase.crashlytics.ndk)
+-    implementation(libs.firebase.analytics)
+     testImplementation(libs.junit)
+ }
+diff --git a/android/common/src/main/java/com/follow/clash/common/GlobalState.kt b/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
+index 8e1f00f..6a71673 100644
+--- a/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
++++ b/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
+@@ -4,8 +4,6 @@ import android.app.ActivityManager
+ import android.app.Application
+ import android.os.Build
+ import android.util.Log
+-import com.google.firebase.FirebaseApp
+-import com.google.firebase.crashlytics.FirebaseCrashlytics
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.SupervisorJob
+@@ -37,16 +35,11 @@ object GlobalState : CoroutineScope by CoroutineScope(SupervisorJob() + Dispatch
+     }
+ 
+     fun setCrashlytics(enable: Boolean) {
+-        FirebaseApp.initializeApp(application)
+-        FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = enable
+-        if (enable) {
+-            log("Crashlytics enabled")
+-        }
++        // This independent build has no Firebase project or upstream credentials.
+     }
+ 
+     fun didCrashOnPreviousExecution(): Boolean {
+-        FirebaseApp.initializeApp(application)
+-        return FirebaseCrashlytics.getInstance().didCrashOnPreviousExecution()
++        return false
+     }
+ 
+     fun lastExitInfo(): Map<String, Any?>? {
+diff --git a/android/common/src/main/res/values/strings.xml b/android/common/src/main/res/values/strings.xml
+index 1e795f3..560a3e1 100644
+--- a/android/common/src/main/res/values/strings.xml
++++ b/android/common/src/main/res/values/strings.xml
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="app_name">FlClash</string>
++    <string name="app_name">FlClash AnyTLS REALITY</string>
+     <string name="service_channel_name">FlClash Service</string>
+ </resources>
+diff --git a/android/gradle.properties b/android/gradle.properties
+index cac97e8..766cde0 100644
+--- a/android/gradle.properties
++++ b/android/gradle.properties
+@@ -4,3 +4,4 @@ android.useAndroidX=true
+ android.builtInKotlin=false
+ # This newDsl flag was added automatically by Flutter migrator
+ android.newDsl=false
++force-version-code-ignoring-abi=true
+diff --git a/lib/common/constant.dart b/lib/common/constant.dart
+index 61b91ea..76065bc 100644
+--- a/lib/common/constant.dart
++++ b/lib/common/constant.dart
+@@ -84,7 +84,7 @@ const systemDnsRecordKey = 'system_dns_record';
+ const bootRecordKey = 'boot_record';
+ const defaultSystemDnsFallback = '223.5.5.5';
+ const double dialogCommonWidth = 300;
+-const repository = 'chen08209/FlClash';
++const repository = 'aldington-david/FlClash';
+ const maxMobileWidth = 600;
+ const maxLaptopWidth = 840;
+ const defaultTestUrl = 'https://www.gstatic.com/generate_204';
+diff --git a/lib/common/request.dart b/lib/common/request.dart
+index 02ece6b..569141a 100644
+--- a/lib/common/request.dart
++++ b/lib/common/request.dart
+@@ -77,10 +77,13 @@ class Request {
+       );
+       if (response.statusCode != 200) return null;
+       final data = response.data as Map<String, dynamic>;
+-      final remoteVersion = data['tag_name'];
+-      final version = globalState.packageInfo.version;
+-      final hasUpdate =
+-          compareVersions(remoteVersion.replaceAll('v', ''), version) > 0;
++      final releaseBuild = RegExp(
++        r'^Android version code: (\d+)$',
++        multiLine: true,
++      ).firstMatch(data['body'] as String? ?? '');
++      final hasUpdate = releaseBuild != null &&
++          int.parse(releaseBuild.group(1)!) >
++              int.parse(globalState.packageInfo.buildNumber);
+       if (!hasUpdate) return null;
+       return data;
+     } catch (e) {
+diff --git a/lib/views/about.dart b/lib/views/about.dart
+index 6f39ed3..ebe614a 100644
+--- a/lib/views/about.dart
++++ b/lib/views/about.dart
+@@ -65,7 +65,7 @@ class AboutView extends ConsumerWidget {
+           title: Text(appLocalizations.core),
+           onTap: () {
+             dialogs.openUrl(
+-              'https://github.com/chen08209/Clash.Meta/tree/FlClash',
++              'https://github.com/aldington-david/mihomo',
+             );
+           },
+           trailing: const Icon(Icons.launch),

@@ -65,7 +65,7 @@ class AboutView extends ConsumerWidget {
           title: Text(appLocalizations.core),
           onTap: () {
             dialogs.openUrl(
-              'https://github.com/chen08209/Clash.Meta/tree/FlClash',
+              'https://github.com/aldington-david/mihomo',
             );
           },
           trailing: const Icon(Icons.launch),
