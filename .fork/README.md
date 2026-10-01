@@ -12,6 +12,8 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 仓库需要四个 GitHub Actions Secrets：`KEYSTORE`（PKCS12 文件的 base64）、`STORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。固定签名须备份；丢失后无法升级已安装的独立应用。构建显式指定 `PKCS12`，临时文件名沿用上游 `keystore.jks`。缺少签名配置时构建失败，不回退 debug 签名。
 
+另需仓库变量 `ANDROID_CERTIFICATE_SHA256`，其值为签名证书 SHA-256 的 64 位十六进制串。发布前比较实际 APK 的签名证书指纹，变量为空或不一致时停止发布。
+
 此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。

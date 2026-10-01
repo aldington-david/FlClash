@@ -119,6 +119,7 @@ jobs:
         env:
           APP_VERSION: ${{ steps.prepare.outputs.version }}
           VERSION_CODE: ${{ steps.prepare.outputs.version_code }}
+          EXPECTED_CERTIFICATE_SHA256: ${{ vars.ANDROID_CERTIFICATE_SHA256 }}
         run: |
           set -euo pipefail
           apk="dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk"
@@ -126,6 +127,9 @@ jobs:
           test "$(find dist -name '*.apk' | wc -l)" -eq 1
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           "$build_tools/apksigner" verify --verbose --print-certs "$apk" > dist/SIGNING-CERTIFICATE.txt
+          [[ "$EXPECTED_CERTIFICATE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'Missing or invalid ANDROID_CERTIFICATE_SHA256 repository variable' >&2; exit 1; }
+          actual_certificate="$(awk -F ': ' '/^Signer #1 certificate SHA-256 digest: / { print tolower($2) }' dist/SIGNING-CERTIFICATE.txt)"
+          test "$actual_certificate" = "${EXPECTED_CERTIFICATE_SHA256,,}" || { echo 'APK signing certificate does not match the configured identity' >&2; exit 1; }
           "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
           grep -q "name='com.github.aldingtondavid.flclash'" "$RUNNER_TEMP/apk-badging.txt"
           grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/apk-badging.txt"
