@@ -1,0 +1,1684 @@
+diff --git a/adapter/adapter.go b/adapter/adapter.go
+index 6f20c08..22054f0 100644
+--- a/adapter/adapter.go
++++ b/adapter/adapter.go
+@@ -167,6 +167,10 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
+ 	var satisfied bool
+ 
+ 	defer func() {
++		if UrlTestHook != nil {
++			UrlTestHook(url, p.Name(), t)
++		}
++
+ 		alive := err == nil
+ 		record := C.DelayHistory{Time: time.Now()}
+ 		if alive {
+diff --git a/adapter/outbound/direct.go b/adapter/outbound/direct.go
+index 1e2b2ef..a204647 100644
+--- a/adapter/outbound/direct.go
++++ b/adapter/outbound/direct.go
+@@ -27,7 +27,7 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
+ 	}
+ 	opts := d.DialOptions()
+ 	opts = append(opts, dialer.WithResolver(resolver.DirectHostResolver))
+-	c, err := dialer.DialContext(ctx, "tcp", metadata.RemoteAddress(), opts...)
++	c, err := dialer.DialContext(resolver.WithInitiator(ctx, resolver.InitiatorDirect), "tcp", metadata.RemoteAddress(), opts...)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -51,7 +51,7 @@ func (d *Direct) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
+ 
+ func (d *Direct) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
+ 	if (!metadata.Resolved() || resolver.DirectHostResolver != resolver.DefaultResolver) && metadata.Host != "" {
+-		ip, err := resolveIPWithResolver(ctx, metadata.Host, d.prefer, resolver.DirectHostResolver)
++		ip, err := resolveIPWithResolver(resolver.WithInitiator(ctx, resolver.InitiatorDirect), metadata.Host, d.prefer, resolver.DirectHostResolver)
+ 		if err != nil {
+ 			return fmt.Errorf("can't resolve ip: %w", err)
+ 		}
+diff --git a/adapter/outbound/util.go b/adapter/outbound/util.go
+index 41bc305..73bac0e 100644
+--- a/adapter/outbound/util.go
++++ b/adapter/outbound/util.go
+@@ -51,7 +51,7 @@ func resolveUDPAddr(ctx context.Context, network, address string, prefer C.DNSPr
+ 		return nil, err
+ 	}
+ 
+-	ip, err := resolveIPWithResolver(ctx, host, prefer, resolver.ProxyServerHostResolver)
++	ip, err := resolveIPWithResolver(resolver.WithInitiator(ctx, resolver.InitiatorProxy), host, prefer, resolver.ProxyServerHostResolver)
+ 
+ 	if err != nil {
+ 		return nil, err
+diff --git a/adapter/patch.go b/adapter/patch.go
+new file mode 100644
+index 0000000..4391c56
+--- /dev/null
++++ b/adapter/patch.go
+@@ -0,0 +1,5 @@
++package adapter
++
++type UrlTestCheck func(url string, name string, delay uint16)
++
++var UrlTestHook UrlTestCheck
+diff --git a/adapter/provider/patch.go b/adapter/provider/patch.go
+new file mode 100644
+index 0000000..1f3306a
+--- /dev/null
++++ b/adapter/provider/patch.go
+@@ -0,0 +1,5 @@
++package provider
++
++func (pp *proxySetProvider) GetSubscriptionInfo() *SubscriptionInfo {
++	return pp.subscriptionInfo
++}
+diff --git a/component/dialer/dialer.go b/component/dialer/dialer.go
+index 6a05c8b..24ab67f 100644
+--- a/component/dialer/dialer.go
++++ b/component/dialer/dialer.go
+@@ -385,6 +385,7 @@ func parseAddr(ctx context.Context, network, address string, preferResolver reso
+ 
+ 	if preferResolver == nil {
+ 		preferResolver = resolver.ProxyServerHostResolver
++		ctx = resolver.WithInitiator(ctx, resolver.InitiatorProxy)
+ 	}
+ 
+ 	var ips []netip.Addr
+diff --git a/component/loopback/detector.go b/component/loopback/detector.go
+index 59d16ca..02f7137 100644
+--- a/component/loopback/detector.go
++++ b/component/loopback/detector.go
+@@ -17,7 +17,7 @@ import (
+ var disableLoopBackDetector, _ = strconv.ParseBool(os.Getenv("DISABLE_LOOPBACK_DETECTOR"))
+ 
+ func init() {
+-	if features.CMFA {
++	if features.Android {
+ 		disableLoopBackDetector = true
+ 	}
+ }
+diff --git a/component/process/process.go b/component/process/process.go
+index 464f5a7..8b758b9 100644
+--- a/component/process/process.go
++++ b/component/process/process.go
+@@ -22,12 +22,10 @@ func FindProcessName(network string, srcIP netip.Addr, srcPort int) (uint32, str
+ 	return findProcessName(network, srcIP, srcPort)
+ }
+ 
+-// PackageNameResolver
+-// never change type traits because it's used in CMFA
+ type PackageNameResolver func(metadata *C.Metadata) (string, error)
+ 
+ // DefaultPackageNameResolver
+-// never change type traits because it's used in CMFA
++// never change type traits because it's used in CFMA
+ var DefaultPackageNameResolver PackageNameResolver
+ 
+ func FindPackageName(metadata *C.Metadata) (string, error) {
+diff --git a/component/resolver/patch.go b/component/resolver/patch.go
+new file mode 100644
+index 0000000..a0a94b4
+--- /dev/null
++++ b/component/resolver/patch.go
+@@ -0,0 +1,22 @@
++package resolver
++
++import "context"
++
++const (
++	InitiatorApp    = "app"
++	InitiatorRule   = "rule"
++	InitiatorDirect = "direct"
++	InitiatorProxy  = "proxy"
++	InitiatorOther  = "other"
++)
++
++type initiatorKey struct{}
++
++func WithInitiator(ctx context.Context, initiator string) context.Context {
++	return context.WithValue(ctx, initiatorKey{}, initiator)
++}
++
++func InitiatorFrom(ctx context.Context) string {
++	initiator, _ := ctx.Value(initiatorKey{}).(string)
++	return initiator
++}
+diff --git a/component/resource/fetcher.go b/component/resource/fetcher.go
+index 464af2e..6d671c8 100644
+--- a/component/resource/fetcher.go
++++ b/component/resource/fetcher.go
+@@ -236,7 +236,7 @@ func (f *Fetcher[V]) updateCallback(path string) {
+ func (f *Fetcher[V]) updateWithLog() {
+ 	_, same, err := f.Update()
+ 	if err != nil {
+-		log.Errorln("[Provider] %s pull error: %s", f.Name(), err.Error())
++		log.Warnln("[Provider] %s pull error: %s", f.Name(), err.Error())
+ 		return
+ 	}
+ 
+diff --git a/component/updater/patch.go b/component/updater/patch.go
+new file mode 100644
+index 0000000..02096ab
+--- /dev/null
++++ b/component/updater/patch.go
+@@ -0,0 +1,53 @@
++package updater
++
++import (
++	"context"
++	"sync"
++
++	"github.com/metacubex/mihomo/log"
++)
++
++var (
++	GeoUpdateHook func(geoType string, updating bool, skipped bool, updateErr error)
++)
++
++func sendGeoUpdateStatus(geoType string, updating bool, skipped bool, updateErr error) {
++	if GeoUpdateHook != nil {
++		GeoUpdateHook(geoType, updating, skipped, updateErr)
++	}
++}
++
++var (
++	geoUpdateMutex  sync.Mutex
++	geoUpdateCancel context.CancelFunc
++)
++
++func StopGeoUpdater() {
++	geoUpdateMutex.Lock()
++	defer geoUpdateMutex.Unlock()
++	stopGeoUpdater()
++}
++
++func stopGeoUpdater() {
++	if geoUpdateCancel == nil {
++		return
++	}
++	geoUpdateCancel()
++	geoUpdateCancel = nil
++}
++
++func RegisterGeoUpdaterWithCancel() {
++	geoUpdateMutex.Lock()
++	defer geoUpdateMutex.Unlock()
++
++	stopGeoUpdater()
++
++	if updateInterval <= 0 {
++		log.Infoln("[GEO] Invalid update interval: %d", updateInterval)
++		return
++	}
++
++	ctx, cancel := context.WithCancel(context.Background())
++	geoUpdateCancel = cancel
++	registerGeoUpdater(ctx)
++}
+diff --git a/component/updater/update_geo.go b/component/updater/update_geo.go
+index 63e6d15..2298338 100644
+--- a/component/updater/update_geo.go
++++ b/component/updater/update_geo.go
+@@ -45,6 +45,10 @@ func SetGeoUpdateInterval(newGeoUpdateInterval int) {
+ }
+ 
+ func UpdateMMDB() (err error) {
++	sendGeoUpdateStatus("MMDB", true, false, nil)
++	var skipped bool
++	defer func() { sendGeoUpdateStatus("MMDB", false, skipped, err) }()
++
+ 	vehicle := resource.NewHTTPVehicle(geodata.MmdbUrl(), C.Path.MMDB(), "", nil, defaultHttpTimeout, 0)
+ 	var oldHash utils.HashType
+ 	if buf, err := os.ReadFile(vehicle.Path()); err == nil {
+@@ -55,6 +59,8 @@ func UpdateMMDB() (err error) {
+ 		return fmt.Errorf("can't download MMDB database file: %w", err)
+ 	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
++		skipped = true
++		_ = os.Chtimes(vehicle.Path(), time.Now(), time.Now())
+ 		return nil
+ 	}
+ 	if len(data) == 0 {
+@@ -76,6 +82,10 @@ func UpdateMMDB() (err error) {
+ }
+ 
+ func UpdateASN() (err error) {
++	sendGeoUpdateStatus("ASN", true, false, nil)
++	var skipped bool
++	defer func() { sendGeoUpdateStatus("ASN", false, skipped, err) }()
++
+ 	vehicle := resource.NewHTTPVehicle(geodata.ASNUrl(), C.Path.ASN(), "", nil, defaultHttpTimeout, 0)
+ 	var oldHash utils.HashType
+ 	if buf, err := os.ReadFile(vehicle.Path()); err == nil {
+@@ -86,6 +96,8 @@ func UpdateASN() (err error) {
+ 		return fmt.Errorf("can't download ASN database file: %w", err)
+ 	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
++		skipped = true
++		_ = os.Chtimes(vehicle.Path(), time.Now(), time.Now())
+ 		return nil
+ 	}
+ 	if len(data) == 0 {
+@@ -107,6 +119,10 @@ func UpdateASN() (err error) {
+ }
+ 
+ func UpdateGeoIp() (err error) {
++	sendGeoUpdateStatus("GEOIP", true, false, nil)
++	var skipped bool
++	defer func() { sendGeoUpdateStatus("GEOIP", false, skipped, err) }()
++
+ 	geoLoader, err := geodata.GetGeoDataLoader("standard")
+ 
+ 	vehicle := resource.NewHTTPVehicle(geodata.GeoIpUrl(), C.Path.GeoIP(), "", nil, defaultHttpTimeout, 0)
+@@ -119,6 +135,8 @@ func UpdateGeoIp() (err error) {
+ 		return fmt.Errorf("can't download GeoIP database file: %w", err)
+ 	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
++		skipped = true
++		_ = os.Chtimes(vehicle.Path(), time.Now(), time.Now())
+ 		return nil
+ 	}
+ 	if len(data) == 0 {
+@@ -137,6 +155,10 @@ func UpdateGeoIp() (err error) {
+ }
+ 
+ func UpdateGeoSite() (err error) {
++	sendGeoUpdateStatus("GEOSITE", true, false, nil)
++	var skipped bool
++	defer func() { sendGeoUpdateStatus("GEOSITE", false, skipped, err) }()
++
+ 	geoLoader, err := geodata.GetGeoDataLoader("standard")
+ 
+ 	vehicle := resource.NewHTTPVehicle(geodata.GeoSiteUrl(), C.Path.GeoSite(), "", nil, defaultHttpTimeout, 0)
+@@ -149,6 +171,8 @@ func UpdateGeoSite() (err error) {
+ 		return fmt.Errorf("can't download GeoSite database file: %w", err)
+ 	}
+ 	if oldHash.Equal(hash) { // same hash, ignored
++		skipped = true
++		_ = os.Chtimes(vehicle.Path(), time.Now(), time.Now())
+ 		return nil
+ 	}
+ 	if len(data) == 0 {
+@@ -205,7 +229,7 @@ func UpdateGeoDatabases() error {
+ 	log.Infoln("[GEO] Updating GEO database")
+ 
+ 	if err := updateGeoDatabases(); err != nil {
+-		log.Errorln("[GEO] update GEO database error: %s", err.Error())
++		log.Infoln("[GEO] update GEO database error: %s", err.Error())
+ 		return err
+ 	}
+ 
+@@ -232,8 +256,12 @@ func getUpdateTime() (time time.Time, err error) {
+ }
+ 
+ func RegisterGeoUpdater() {
++	registerGeoUpdater(context.Background())
++}
++
++func registerGeoUpdater(ctx context.Context) {
+ 	if updateInterval <= 0 {
+-		log.Errorln("[GEO] Invalid update interval: %d", updateInterval)
++		log.Infoln("[GEO] Invalid update interval: %d", updateInterval)
+ 		return
+ 	}
+ 
+@@ -243,7 +271,7 @@ func RegisterGeoUpdater() {
+ 
+ 		lastUpdate, err := getUpdateTime()
+ 		if err != nil {
+-			log.Errorln("[GEO] Get GEO database update time error: %s", err.Error())
++			log.Infoln("[GEO] Get GEO database update time error: %s", err.Error())
+ 			return
+ 		}
+ 
+@@ -251,15 +279,21 @@ func RegisterGeoUpdater() {
+ 		if lastUpdate.Add(time.Duration(updateInterval) * time.Hour).Before(time.Now()) {
+ 			log.Infoln("[GEO] Database has not been updated for %v, update now", time.Duration(updateInterval)*time.Hour)
+ 			if err := UpdateGeoDatabases(); err != nil {
+-				log.Errorln("[GEO] Failed to update GEO database: %s", err.Error())
++				log.Infoln("[GEO] Failed to update GEO database: %s", err.Error())
+ 				return
+ 			}
+ 		}
+ 
+-		for range ticker.C {
+-			log.Infoln("[GEO] updating database every %d hours", updateInterval)
+-			if err := UpdateGeoDatabases(); err != nil {
+-				log.Errorln("[GEO] Failed to update GEO database: %s", err.Error())
++		for {
++			select {
++			case <-ctx.Done():
++				log.Infoln("[GEO] Geo updater stopped")
++				return
++			case <-ticker.C:
++				log.Infoln("[GEO] updating database every %d hours", updateInterval)
++				if err := UpdateGeoDatabases(); err != nil {
++					log.Infoln("[GEO] Failed to update GEO database: %s", err.Error())
++				}
+ 			}
+ 		}
+ 	}()
+diff --git a/config/config.go b/config/config.go
+index 707114a..99648bc 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -994,6 +994,7 @@ func parseProxies(cfg *RawConfig) (proxies map[string]C.Proxy, providersMap map[
+ 		return nil, nil, err
+ 	}
+ 
++	SetProxyNameList(proxyList)
+ 	return proxies, providersMap, nil
+ }
+ 
+diff --git a/config/patch.go b/config/patch.go
+new file mode 100644
+index 0000000..01c415a
+--- /dev/null
++++ b/config/patch.go
+@@ -0,0 +1,20 @@
++package config
++
++import "sync"
++
++var (
++	proxyNameList   []string
++	proxyNameListMu sync.RWMutex
++)
++
++func GetProxyNameList() []string {
++	proxyNameListMu.RLock()
++	defer proxyNameListMu.RUnlock()
++	return proxyNameList
++}
++
++func SetProxyNameList(list []string) {
++	proxyNameListMu.Lock()
++	defer proxyNameListMu.Unlock()
++	proxyNameList = list
++}
+diff --git a/constant/adapters.go b/constant/adapters.go
+index 9b0b70c..ffb1f2a 100644
+--- a/constant/adapters.go
++++ b/constant/adapters.go
+@@ -62,9 +62,10 @@ const (
+ 	DefaultUDPTimeout = dialer.DefaultUDPTimeout
+ 	DefaultDropTime   = 12 * DefaultTCPTimeout
+ 	DefaultTLSTimeout = DefaultTCPTimeout
+-	DefaultTestURL    = "https://www.gstatic.com/generate_204"
+ )
+ 
++var DefaultTestURL = "https://www.gstatic.com/generate_204"
++
+ var ErrNotSupport = errors.New("no support")
+ 
+ type Connection interface {
+diff --git a/constant/features/android.go b/constant/features/android.go
+new file mode 100644
+index 0000000..c1174f0
+--- /dev/null
++++ b/constant/features/android.go
+@@ -0,0 +1,5 @@
++//go:build android
++
++package features
++
++const Android = true
+diff --git a/constant/features/android_stub.go b/constant/features/android_stub.go
+new file mode 100644
+index 0000000..282493e
+--- /dev/null
++++ b/constant/features/android_stub.go
+@@ -0,0 +1,5 @@
++//go:build !android
++
++package features
++
++const Android = false
+diff --git a/constant/features/cmfa.go b/constant/features/cmfa.go
+deleted file mode 100644
+index 9a81d82..0000000
+--- a/constant/features/cmfa.go
++++ /dev/null
+@@ -1,5 +0,0 @@
+-//go:build cmfa
+-
+-package features
+-
+-const CMFA = true
+diff --git a/constant/features/cmfa_stub.go b/constant/features/cmfa_stub.go
+deleted file mode 100644
+index f7ef082..0000000
+--- a/constant/features/cmfa_stub.go
++++ /dev/null
+@@ -1,5 +0,0 @@
+-//go:build !cmfa
+-
+-package features
+-
+-const CMFA = false
+diff --git a/constant/features/tags.go b/constant/features/tags.go
+index bf27c24..4c90ac2 100644
+--- a/constant/features/tags.go
++++ b/constant/features/tags.go
+@@ -1,9 +1,6 @@
+ package features
+ 
+ func Tags() (tags []string) {
+-	if CMFA {
+-		tags = append(tags, "cmfa")
+-	}
+ 	if WithLowMemory {
+ 		tags = append(tags, "with_low_memory")
+ 	}
+diff --git a/constant/path.go b/constant/path.go
+index f2463a4..590928d 100644
+--- a/constant/path.go
++++ b/constant/path.go
+@@ -86,7 +86,7 @@ func (p *path) Resolve(path string) string {
+ 
+ // IsSafePath return true if path is a subpath of homedir (or in the SAFE_PATHS environment variable)
+ func (p *path) IsSafePath(path string) bool {
+-	if p.allowUnsafePath || features.CMFA {
++	if p.allowUnsafePath || features.Android {
+ 		return true
+ 	}
+ 	path = p.Resolve(path)
+@@ -135,7 +135,8 @@ func (p *path) MMDB() string {
+ 		} else {
+ 			if strings.EqualFold(fi.Name(), "Country.mmdb") ||
+ 				strings.EqualFold(fi.Name(), "geoip.db") ||
+-				strings.EqualFold(fi.Name(), "geoip.metadb") {
++				strings.EqualFold(fi.Name(), "geoip.metadb") ||
++				strings.EqualFold(fi.Name(), "GEOIP.metadb") {
+ 				GeoipName = fi.Name()
+ 				return P.Join(p.homeDir, fi.Name())
+ 			}
+@@ -200,7 +201,8 @@ func (p *path) GeoIP() string {
+ 			// 目录则直接跳过
+ 			continue
+ 		} else {
+-			if strings.EqualFold(fi.Name(), "GeoIP.dat") {
++			if strings.EqualFold(fi.Name(), "GeoIP.dat") ||
++				strings.EqualFold(fi.Name(), "GEOIP.dat") {
+ 				GeoipName = fi.Name()
+ 				return P.Join(p.homeDir, fi.Name())
+ 			}
+@@ -219,7 +221,8 @@ func (p *path) GeoSite() string {
+ 			// 目录则直接跳过
+ 			continue
+ 		} else {
+-			if strings.EqualFold(fi.Name(), "GeoSite.dat") {
++			if strings.EqualFold(fi.Name(), "GeoSite.dat") ||
++				strings.EqualFold(fi.Name(), "GEOSITE.dat") {
+ 				GeositeName = fi.Name()
+ 				return P.Join(p.homeDir, fi.Name())
+ 			}
+diff --git a/dns/patch.go b/dns/patch.go
+new file mode 100644
+index 0000000..5ae0adf
+--- /dev/null
++++ b/dns/patch.go
+@@ -0,0 +1,125 @@
++package dns
++
++import (
++	"context"
++	"fmt"
++	"sync"
++	"time"
++
++	"github.com/metacubex/mihomo/common/lru"
++	"github.com/metacubex/mihomo/component/resolver"
++	icontext "github.com/metacubex/mihomo/context"
++
++	D "github.com/miekg/dns"
++)
++
++type QueryRecord struct {
++	Question  D.Question
++	Msg       *D.Msg
++	Initiator string
++	Upstream  string
++	Cached    bool
++	Start     time.Time
++	Err       error
++}
++
++type QueryNotify func(record QueryRecord)
++
++var DefaultQueryNotify QueryNotify
++
++// Queries from apps reach the resolver through withResolver, which passes the
++// DNSContext that Service.ServeMsg created as the context itself.
++func queryInitiator(ctx context.Context) string {
++	if initiator := resolver.InitiatorFrom(ctx); initiator != "" {
++		return initiator
++	}
++	if _, ok := ctx.(*icontext.DNSContext); ok {
++		return resolver.InitiatorApp
++	}
++	return resolver.InitiatorOther
++}
++
++// A cached answer keeps no trace of the upstream that gave it, so that is
++// remembered per resolver and question when the exchange finishes.
++var answeredBy = lru.New[string, string](lru.WithSize[string, string](4096))
++
++func answeredByKey(r *Resolver, q D.Question) string {
++	return fmt.Sprintf("%p %s", r, q.String())
++}
++
++func (r *Resolver) traceCacheHit(ctx context.Context, q D.Question, msg *D.Msg) {
++	notify := DefaultQueryNotify
++	if notify == nil {
++		return
++	}
++	upstream, _ := answeredBy.Get(answeredByKey(r, q))
++	notify(QueryRecord{
++		Question:  q,
++		Msg:       msg,
++		Initiator: queryInitiator(ctx),
++		Upstream:  upstream,
++		Cached:    true,
++		Start:     time.Now(),
++	})
++}
++
++type exchangeTrace struct {
++	notify    QueryNotify
++	resolver  *Resolver
++	question  D.Question
++	initiator string
++	start     time.Time
++
++	mu        sync.Mutex
++	upstreams map[*D.Msg]string
++}
++
++type exchangeTraceKey struct{}
++
++func (r *Resolver) traceExchange(ctx context.Context, q D.Question, initiator string) (context.Context, *exchangeTrace) {
++	notify := DefaultQueryNotify
++	if notify == nil {
++		return ctx, nil
++	}
++	trace := &exchangeTrace{
++		notify:    notify,
++		resolver:  r,
++		question:  q,
++		initiator: initiator,
++		start:     time.Now(),
++		upstreams: map[*D.Msg]string{},
++	}
++	return context.WithValue(ctx, exchangeTraceKey{}, trace), trace
++}
++
++func traceAnswer(ctx context.Context, msg *D.Msg, upstream string) {
++	trace, _ := ctx.Value(exchangeTraceKey{}).(*exchangeTrace)
++	if trace == nil || msg == nil {
++		return
++	}
++	trace.mu.Lock()
++	trace.upstreams[msg] = upstream
++	trace.mu.Unlock()
++}
++
++func (t *exchangeTrace) finish(msg *D.Msg, err error) {
++	if t == nil {
++		return
++	}
++	record := QueryRecord{
++		Question:  t.question,
++		Msg:       msg,
++		Initiator: t.initiator,
++		Start:     t.start,
++		Err:       err,
++	}
++	if err == nil {
++		t.mu.Lock()
++		record.Upstream = t.upstreams[msg]
++		t.mu.Unlock()
++		if record.Upstream != "" {
++			answeredBy.Set(answeredByKey(t.resolver, t.question), record.Upstream)
++		}
++	}
++	t.notify(record)
++}
+diff --git a/dns/patch_android.go b/dns/patch_android.go
+index cad718b..138e95d 100644
+--- a/dns/patch_android.go
++++ b/dns/patch_android.go
+@@ -1,4 +1,4 @@
+-//go:build android && cmfa
++//go:build android
+ 
+ package dns
+ 
+diff --git a/dns/patch_test.go b/dns/patch_test.go
+new file mode 100644
+index 0000000..d440dc7
+--- /dev/null
++++ b/dns/patch_test.go
+@@ -0,0 +1,234 @@
++package dns
++
++import (
++	"context"
++	"errors"
++	"net"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/metacubex/mihomo/component/resolver"
++	icontext "github.com/metacubex/mihomo/context"
++
++	D "github.com/miekg/dns"
++)
++
++type answeringClient struct {
++	address string
++	ip      string
++}
++
++func (c *answeringClient) ExchangeContext(_ context.Context, m *D.Msg) (*D.Msg, error) {
++	reply := new(D.Msg)
++	reply.SetReply(m)
++	reply.Answer = []D.RR{&D.A{
++		Hdr: D.RR_Header{Name: m.Question[0].Name, Rrtype: D.TypeA, Class: D.ClassINET, Ttl: 60},
++		A:   net.ParseIP(c.ip).To4(),
++	}}
++	return reply, nil
++}
++
++func (c *answeringClient) Address() string { return c.address }
++
++func (c *answeringClient) ResetConnection() {}
++
++func recordQueries(t *testing.T) func() []QueryRecord {
++	t.Helper()
++	var mu sync.Mutex
++	var records []QueryRecord
++	previous := DefaultQueryNotify
++	DefaultQueryNotify = func(record QueryRecord) {
++		mu.Lock()
++		records = append(records, record)
++		mu.Unlock()
++	}
++	t.Cleanup(func() { DefaultQueryNotify = previous })
++	return func() []QueryRecord {
++		mu.Lock()
++		defer mu.Unlock()
++		return append([]QueryRecord(nil), records...)
++	}
++}
++
++type failingClient struct{}
++
++func (failingClient) ExchangeContext(context.Context, *D.Msg) (*D.Msg, error) {
++	return nil, errors.New("upstream unreachable")
++}
++
++func (failingClient) Address() string { return "udp://192.0.2.99:53" }
++
++func (failingClient) ResetConnection() {}
++
++func waitForRecords(t *testing.T, records func() []QueryRecord, want int) []QueryRecord {
++	t.Helper()
++	deadline := time.Now().Add(2 * time.Second)
++	for {
++		got := records()
++		if len(got) >= want || time.Now().After(deadline) {
++			if len(got) != want {
++				t.Fatalf("recorded %d queries, want %d: %+v", len(got), want, got)
++			}
++			return got
++		}
++		time.Sleep(10 * time.Millisecond)
++	}
++}
++
++func newAnsweringResolver(address string) *Resolver {
++	return &Resolver{
++		main:  []dnsClient{&answeringClient{address: address, ip: "198.51.100.7"}},
++		cache: Config{}.newCache(),
++	}
++}
++
++func TestLookupReportsInitiatorUpstreamAndCacheHit(t *testing.T) {
++	records := recordQueries(t)
++	r := newAnsweringResolver("udp://192.0.2.53:53")
++	ctx := resolver.WithInitiator(context.Background(), resolver.InitiatorDirect)
++
++	for i := 0; i < 2; i++ {
++		if _, err := r.LookupIPv4(ctx, "direct.example"); err != nil {
++			t.Fatal(err)
++		}
++	}
++
++	got := records()
++	if len(got) != 2 {
++		t.Fatalf("recorded %d queries, want 2", len(got))
++	}
++	for i, wantCached := range []bool{false, true} {
++		record := got[i]
++		if record.Initiator != resolver.InitiatorDirect || record.Upstream != "udp://192.0.2.53:53" || record.Cached != wantCached {
++			t.Errorf("query %d = initiator %q, upstream %q, cached %v", i, record.Initiator, record.Upstream, record.Cached)
++		}
++		if record.Question.Name != "direct.example." || record.Err != nil || record.Msg == nil {
++			t.Errorf("query %d = %+v", i, record)
++		}
++	}
++}
++
++func TestUnlabeledQueryIsOther(t *testing.T) {
++	records := recordQueries(t)
++	r := newAnsweringResolver("https://dns.example/dns-query")
++	query := new(D.Msg)
++	query.SetQuestion("ech.example.", D.TypeHTTPS)
++
++	if _, err := r.ExchangeContext(context.Background(), query); err != nil {
++		t.Fatal(err)
++	}
++
++	got := records()
++	if len(got) != 1 || got[0].Initiator != resolver.InitiatorOther || got[0].Question.Qtype != D.TypeHTTPS {
++		t.Fatalf("records = %+v", got)
++	}
++}
++
++func TestFailedExchangeDropsThePreviousUpstream(t *testing.T) {
++	records := recordQueries(t)
++	r := newAnsweringResolver("udp://192.0.2.53:53")
++	if _, err := r.LookupIPv4(context.Background(), "flaky.example"); err != nil {
++		t.Fatal(err)
++	}
++	r.main = []dnsClient{failingClient{}}
++	r.cache = Config{}.newCache()
++
++	if _, err := r.LookupIPv4(context.Background(), "flaky.example"); err == nil {
++		t.Fatal("lookup through a failing upstream succeeded")
++	}
++
++	// A failed exchange is retried once in the background, as its own exchange.
++	got := waitForRecords(t, records, 3)
++	for _, record := range got[1:] {
++		if record.Err == nil || record.Upstream != "" {
++			t.Fatalf("records = %+v", got)
++		}
++	}
++}
++
++type blockingClient struct {
++	answeringClient
++	entered chan struct{}
++	release chan struct{}
++}
++
++func (c *blockingClient) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) {
++	c.entered <- struct{}{}
++	<-c.release
++	return c.answeringClient.ExchangeContext(ctx, m)
++}
++
++func TestCallersSharingAnExchangeRecordItOnce(t *testing.T) {
++	records := recordQueries(t)
++	client := &blockingClient{
++		answeringClient: answeringClient{address: "udp://192.0.2.53:53", ip: "198.51.100.7"},
++		entered:         make(chan struct{}, 1),
++		release:         make(chan struct{}),
++	}
++	r := &Resolver{main: []dnsClient{client}, cache: Config{}.newCache()}
++
++	var wg sync.WaitGroup
++	lookup := func() {
++		defer wg.Done()
++		if _, err := r.LookupIPv4(context.Background(), "shared.example"); err != nil {
++			t.Error(err)
++		}
++	}
++	wg.Add(2)
++	go lookup()
++	<-client.entered
++	go lookup()
++	time.Sleep(50 * time.Millisecond)
++	close(client.release)
++	wg.Wait()
++
++	exchanges := 0
++	for _, record := range records() {
++		if !record.Cached {
++			exchanges++
++		}
++	}
++	if exchanges != 1 {
++		t.Fatalf("recorded %d exchanges, want 1: %+v", exchanges, records())
++	}
++}
++
++func TestServeMsgReportsTheAppQueryOnce(t *testing.T) {
++	records := recordQueries(t)
++	r := newAnsweringResolver("tls://192.0.2.1:853")
++	service := &Service{handler: withResolver(r, true)}
++	query := new(D.Msg)
++	query.SetQuestion("app.example.", D.TypeA)
++
++	if _, err := service.ServeMsg(context.Background(), query); err != nil {
++		t.Fatal(err)
++	}
++
++	got := records()
++	if len(got) != 1 {
++		t.Fatalf("recorded %d queries, want only the app query", len(got))
++	}
++	record := got[0]
++	if record.Initiator != resolver.InitiatorApp || record.Upstream != "tls://192.0.2.1:853" || record.Cached {
++		t.Fatalf("record = initiator %q, upstream %q, cached %v", record.Initiator, record.Upstream, record.Cached)
++	}
++}
++
++func TestAnswersThatSkipTheResolverAreNotRecorded(t *testing.T) {
++	records := recordQueries(t)
++	service := &Service{handler: func(ctx *icontext.DNSContext, m *D.Msg) (*D.Msg, error) {
++		ctx.SetType(icontext.DNSTypeFakeIP)
++		return handleMsgWithEmptyAnswer(m), nil
++	}}
++	query := new(D.Msg)
++	query.SetQuestion("fake.example.", D.TypeA)
++
++	if _, err := service.ServeMsg(context.Background(), query); err != nil {
++		t.Fatal(err)
++	}
++
++	if got := records(); len(got) != 0 {
++		t.Fatalf("records = %+v", got)
++	}
++}
+diff --git a/dns/resolver.go b/dns/resolver.go
+index b8742f2..32fbb3d 100644
+--- a/dns/resolver.go
++++ b/dns/resolver.go
+@@ -169,6 +169,7 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
+ 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
+ 	if hit {
+ 		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
++		r.traceCacheHit(ctx, q, msg)
+ 		now := time.Now()
+ 		if expireTime.Before(now) {
+ 			setMsgTTL(msg, uint32(1)) // Continue fetch
+@@ -188,9 +189,11 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
+ 
+ 	retryNum := 0
+ 	retryMax := 3
++	initiator := queryInitiator(ctx)
+ 	fn := func() (result *D.Msg, err error) {
+ 		ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout) // reset timeout in singleflight
+ 		defer cancel()
++		ctx, trace := r.traceExchange(ctx, q, initiator)
+ 		cache := false
+ 
+ 		defer func() {
+@@ -205,6 +208,7 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
+ 				putMsgToCache(r.cache, q, result)
+ 			}
+ 		}()
++		defer func() { trace.finish(result, err) }()
+ 
+ 		isIPReq := isIPRequest(q)
+ 		if isIPReq {
+diff --git a/dns/system_common.go b/dns/system_common.go
+index e6dabdc..78c4a86 100644
+--- a/dns/system_common.go
++++ b/dns/system_common.go
+@@ -1,4 +1,4 @@
+-//go:build !(android && cmfa)
++//go:build !android
+ 
+ package dns
+ 
+diff --git a/dns/util.go b/dns/util.go
+index 0a0c6e4..71dcaf0 100644
+--- a/dns/util.go
++++ b/dns/util.go
+@@ -421,6 +421,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
+ 	for _, client := range clients {
+ 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
+ 			msg, err = client.ExchangeContext(ctx, m)
++			traceAnswer(ctx, msg, client.Address())
+ 			return msg, false, err
+ 		}
+ 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
+@@ -435,6 +436,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
+ 				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
+ 			}
+ 			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
++			traceAnswer(ctx, m, client.Address())
+ 			return m, nil
+ 		})
+ 	}
+diff --git a/hub/executor/executor.go b/hub/executor/executor.go
+index 796face..dc7c66b 100644
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -104,8 +104,8 @@ func ApplyConfig(cfg *config.Config, force bool) {
+ 	updateGeneral(cfg.General, true)
+ 	updateDNS(cfg.DNS, cfg.General.IPv6)
+ 	updateNTP(cfg.NTP) // initialize NTP after DNS because an NTP server may be a hostname.
+-	updateListeners(cfg.General, cfg.Listeners, force)
+-	updateTun(cfg.General) // tun should not care "force"
++	//updateListeners(cfg.General, cfg.Listeners, force)
++	//updateTun(cfg.General) // tun should not care "force"
+ 	updateIPTables(cfg)
+ 	updateTunnels(cfg.Tunnels)
+ 
+@@ -328,13 +328,17 @@ func loadProvider[T P.Provider](providers map[string]T) {
+ 			switch pv.Type() {
+ 			case P.Proxy:
+ 				{
+-					log.Errorln("initial proxy provider %s error: %v", name, err)
++					log.Warnln("initial proxy provider %s error: %v", name, err)
+ 				}
+ 			case P.Rule:
+ 				{
+-					log.Errorln("initial rule provider %s error: %v", name, err)
++					log.Warnln("initial rule provider %s error: %v", name, err)
+ 				}
+ 			}
++		} else {
++			if DefaultProviderLoadedHook != nil {
++				DefaultProviderLoadedHook(name)
++			}
+ 		}
+ 	}
+ 
+@@ -349,7 +353,6 @@ func loadProvider[T P.Provider](providers map[string]T) {
+ 			load(pv)
+ 		}()
+ 	}
+-	wg.Wait()
+ }
+ 
+ func updateSniffer(snifferConfig *sniffer.Config) {
+diff --git a/hub/executor/patch.go b/hub/executor/patch.go
+new file mode 100644
+index 0000000..1cbbbbc
+--- /dev/null
++++ b/hub/executor/patch.go
+@@ -0,0 +1,5 @@
++package executor
++
++type ProviderLoadedHook func(providerName string)
++
++var DefaultProviderLoadedHook ProviderLoadedHook
+diff --git a/hub/route/patch_android.go b/hub/route/patch_android.go
+index 5eba279..4b6dcf2 100644
+--- a/hub/route/patch_android.go
++++ b/hub/route/patch_android.go
+@@ -1,4 +1,4 @@
+-//go:build android && cmfa
++//go:build android
+ 
+ package route
+ 
+diff --git a/hub/route/server.go b/hub/route/server.go
+index 6d37d48..b1659cd 100644
+--- a/hub/route/server.go
++++ b/hub/route/server.go
+@@ -181,9 +181,7 @@ func start(cfg *Config) {
+ 			Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
+ 		}
+ 		httpServer = server
+-		if err = server.Serve(l); err != nil {
+-			log.Errorln("External controller serve error: %s", err)
+-		}
++		_ = server.Serve(l)
+ 	}
+ }
+ 
+diff --git a/listener/http/patch_android.go b/listener/http/patch_android.go
+new file mode 100644
+index 0000000..a763c95
+--- /dev/null
++++ b/listener/http/patch_android.go
+@@ -0,0 +1,9 @@
++//go:build android
++
++package http
++
++import "net"
++
++func (l *Listener) Listener() net.Listener {
++	return l.listener
++}
+diff --git a/listener/listener.go b/listener/listener.go
+index 3a0a8aa..ececbc4 100644
+--- a/listener/listener.go
++++ b/listener/listener.go
+@@ -512,10 +512,8 @@ func ReCreateTun(tunConf LC.Tun, tunnel C.Tunnel) {
+ 		}
+ 	}()
+ 
+-	if tunConf.Equal(LastTunConf) {
+-		if tunLister != nil { // some default value in dialer maybe changed when config reload, reset at here
+-			tunLister.OnReload()
+-		}
++	if tunLister != nil && tunConf.Equal(LastTunConf) {
++		tunLister.OnReload()
+ 		return
+ 	}
+ 
+diff --git a/listener/patch.go b/listener/patch.go
+new file mode 100644
+index 0000000..6ab5aa1
+--- /dev/null
++++ b/listener/patch.go
+@@ -0,0 +1,74 @@
++package listener
++
++func StopListener() {
++
++	if socksListener != nil {
++		_ = socksListener.Close()
++		socksListener = nil
++	}
++
++	if socksUDPListener != nil {
++		_ = socksUDPListener.Close()
++		socksUDPListener = nil
++	}
++
++	if httpListener != nil {
++		_ = httpListener.Close()
++		httpListener = nil
++	}
++
++	if redirListener != nil {
++		_ = redirListener.Close()
++		redirListener = nil
++	}
++
++	if redirUDPListener != nil {
++		_ = redirUDPListener.Close()
++		redirUDPListener = nil
++	}
++
++	if tproxyListener != nil {
++		_ = tproxyListener.Close()
++		tproxyListener = nil
++	}
++
++	if tproxyUDPListener != nil {
++		_ = tproxyUDPListener.Close()
++		tproxyUDPListener = nil
++	}
++
++	if mixedListener != nil {
++		_ = mixedListener.Close()
++		mixedListener = nil
++	}
++
++	if mixedUDPLister != nil {
++		_ = mixedUDPLister.Close()
++		mixedUDPLister = nil
++	}
++
++	if tunLister != nil {
++		_ = tunLister.Close()
++		tunLister = nil
++	}
++
++	if shadowSocksListener != nil {
++		_ = shadowSocksListener.Close()
++		shadowSocksListener = nil
++	}
++
++	if shadowSocksListener != nil {
++		_ = shadowSocksListener.Close()
++		shadowSocksListener = nil
++	}
++
++	if vmessListener != nil {
++		_ = vmessListener.Close()
++		vmessListener = nil
++	}
++
++	if tuicListener != nil {
++		_ = tuicListener.Close()
++		tuicListener = nil
++	}
++}
+diff --git a/listener/sing_tun/server.go b/listener/sing_tun/server.go
+index 1962a1e..ca4d0b8 100644
+--- a/listener/sing_tun/server.go
++++ b/listener/sing_tun/server.go
+@@ -470,12 +470,6 @@ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Lis
+ 		}
+ 
+ 	}
+-
+-	err = l.buildAndroidRules(&tunOptions)
+-	if err != nil {
+-		err = E.Cause(err, "build android rules")
+-		return
+-	}
+ 	tunIf, err := tunNew(tunOptions)
+ 	if err != nil {
+ 		err = E.Cause(err, "configure tun interface")
+diff --git a/listener/sing_tun/server_android.go b/listener/sing_tun/server_android.go
+index f180bd3..71ac263 100644
+--- a/listener/sing_tun/server_android.go
++++ b/listener/sing_tun/server_android.go
+@@ -1,77 +1,11 @@
+-//go:build android && !cmfa
++//go:build android
+ 
+ package sing_tun
+ 
+ import (
+-	"errors"
+-	"sync"
+-
+-	"github.com/metacubex/mihomo/component/process"
+-	"github.com/metacubex/mihomo/constant"
+-	"github.com/metacubex/mihomo/constant/features"
+-	"github.com/metacubex/mihomo/log"
+-
+-	"github.com/metacubex/sing-tun"
+-)
+-
+-type packageManagerCallback struct{}
+-
+-func (cb *packageManagerCallback) OnPackagesUpdated(packageCount int, sharedCount int) {}
+-
+-func newPackageManager() (tun.PackageManager, error) {
+-	packageManager, err := tun.NewPackageManager(tun.PackageManagerOptions{
+-		Callback: &packageManagerCallback{},
+-		Logger:   log.SingLogger,
+-	})
+-	if err != nil {
+-		return nil, err
+-	}
+-	err = packageManager.Start()
+-	if err != nil {
+-		return nil, err
+-	}
+-	return packageManager, nil
+-}
+-
+-var (
+-	globalPM tun.PackageManager
+-	pmOnce   sync.Once
+-	pmErr    error
++	tun "github.com/metacubex/sing-tun"
+ )
+ 
+-func getPackageManager() (tun.PackageManager, error) {
+-	pmOnce.Do(func() {
+-		globalPM, pmErr = newPackageManager()
+-	})
+-	return globalPM, pmErr
+-}
+-
+ func (l *Listener) buildAndroidRules(tunOptions *tun.Options) error {
+-	packageManager, err := getPackageManager()
+-	if err != nil {
+-		return err
+-	}
+-	tunOptions.BuildAndroidRules(packageManager, l.handler)
+ 	return nil
+ }
+-
+-func findPackageName(metadata *constant.Metadata) (string, error) {
+-	packageManager, err := getPackageManager()
+-	if err != nil {
+-		return "", err
+-	}
+-	uid := metadata.Uid
+-	if sharedPackage, loaded := packageManager.SharedPackageByID(uid % 100000); loaded {
+-		return sharedPackage, nil
+-	}
+-	if packageName, loaded := packageManager.PackageByID(uid % 100000); loaded {
+-		return packageName, nil
+-	}
+-	return "", errors.New("package not found")
+-}
+-
+-func init() {
+-	if !features.CMFA {
+-		process.DefaultPackageNameResolver = findPackageName
+-	}
+-}
+diff --git a/listener/sing_tun/server_notandroid.go b/listener/sing_tun/server_notandroid.go
+deleted file mode 100644
+index e393d4c..0000000
+--- a/listener/sing_tun/server_notandroid.go
++++ /dev/null
+@@ -1,11 +0,0 @@
+-//go:build !android || cmfa
+-
+-package sing_tun
+-
+-import (
+-	tun "github.com/metacubex/sing-tun"
+-)
+-
+-func (l *Listener) buildAndroidRules(tunOptions *tun.Options) error {
+-	return nil
+-}
+diff --git a/rules/provider/patch_android.go b/rules/provider/patch_android.go
+new file mode 100644
+index 0000000..a45b9c5
+--- /dev/null
++++ b/rules/provider/patch_android.go
+@@ -0,0 +1,17 @@
++//go:build android
++
++package provider
++
++import "time"
++
++var (
++	suspended bool
++)
++
++type UpdatableProvider interface {
++	UpdatedAt() time.Time
++}
++
++func Suspend(s bool) {
++	suspended = s
++}
+diff --git a/tunnel/patch.go b/tunnel/patch.go
+new file mode 100644
+index 0000000..bbef5c5
+--- /dev/null
++++ b/tunnel/patch.go
+@@ -0,0 +1,104 @@
++package tunnel
++
++import (
++	"sync"
++
++	C "github.com/metacubex/mihomo/constant"
++	P "github.com/metacubex/mihomo/constant/provider"
++)
++
++var (
++	allProxiesMu sync.Mutex
++	// Published copy-on-write: a rebuild installs a new map rather than writing
++	// to one a caller may still be reading.
++	allProxies map[string]C.Proxy
++	// Provider version the cache was built from, per provider name.
++	allProxiesVersions map[string]uint32
++)
++
++// AllProxies returns every proxy the tunnel can route to — the ones the config
++// declared plus the ones its providers carry — keyed by name. The result is
++// shared and must not be modified.
++//
++// The answer is cached because rebuilding it costs one entry per proxy, which
++// on a large subscription is megabytes of garbage per call. Only two things
++// invalidate it: an apply replacing the maps, which calls invalidateAllProxies,
++// and a provider swapping its list, which bumps its own Version.
++func AllProxies() map[string]C.Proxy {
++	// configMux before allProxiesMu, never the other way round: UpdateProxies
++	// takes them in that order.
++	configMux.RLock()
++	defer configMux.RUnlock()
++
++	allProxiesMu.Lock()
++	defer allProxiesMu.Unlock()
++
++	currentProviders := providers
++	if allProxies != nil && allProxiesUpToDate(currentProviders) {
++		return allProxies
++	}
++
++	rebuilt := make(map[string]C.Proxy)
++	for name, proxy := range proxies {
++		rebuilt[name] = proxy
++	}
++	versions := make(map[string]uint32, len(currentProviders))
++	for name, p := range currentProviders {
++		// Version before proxies. The other order can stamp a version newer
++		// than the list that was read, and the cache never recovers.
++		versions[name] = p.Version()
++		for _, proxy := range p.Proxies() {
++			rebuilt[proxy.Name()] = proxy
++		}
++	}
++
++	allProxies = rebuilt
++	allProxiesVersions = versions
++	return allProxies
++}
++
++func allProxiesUpToDate(currentProviders map[string]P.ProxyProvider) bool {
++	if len(currentProviders) != len(allProxiesVersions) {
++		return false
++	}
++	for name, p := range currentProviders {
++		version, tracked := allProxiesVersions[name]
++		if !tracked || version != p.Version() {
++			return false
++		}
++	}
++	return true
++}
++
++// InvalidateAllProxies drops the cache for a host that would rather pay for one
++// rebuild than keep the map resident. Correctness never needs it: the cache is
++// the last reference to the proxies a provider already replaced, and it holds
++// them until a read that may not come while the host's proxy view is closed.
++func InvalidateAllProxies() {
++	invalidateAllProxies()
++}
++
++// invalidateAllProxies drops the cache. UpdateProxies calls it because an apply
++// replaces both maps outright, which no provider version can report.
++func invalidateAllProxies() {
++	allProxiesMu.Lock()
++	defer allProxiesMu.Unlock()
++	allProxies = nil
++	allProxiesVersions = nil
++}
++
++// ProvidersSnapshot returns the proxy providers the tunnel holds, read under
++// the lock an apply installs them with — Providers() takes none. The maps are
++// never written in place, so the result stays valid after the lock is dropped.
++func ProvidersSnapshot() map[string]P.ProxyProvider {
++	configMux.RLock()
++	defer configMux.RUnlock()
++	return providers
++}
++
++// RuleProvidersSnapshot is ProvidersSnapshot for rule providers.
++func RuleProvidersSnapshot() map[string]P.RuleProvider {
++	configMux.RLock()
++	defer configMux.RUnlock()
++	return ruleProviders
++}
+diff --git a/tunnel/statistic/manager.go b/tunnel/statistic/manager.go
+index c69746d..f38ed07 100644
+--- a/tunnel/statistic/manager.go
++++ b/tunnel/statistic/manager.go
+@@ -26,18 +26,27 @@ func init() {
+ }
+ 
+ type Manager struct {
+-	connections   xsync.Map[string, Tracker]
+-	uploadTemp    atomic.Int64
+-	downloadTemp  atomic.Int64
+-	uploadBlip    atomic.Int64
+-	downloadBlip  atomic.Int64
+-	uploadTotal   atomic.Int64
+-	downloadTotal atomic.Int64
+-	pid           int32
+-	memory        uint64
++	connections        xsync.Map[string, Tracker]
++	uploadTemp         atomic.Int64
++	downloadTemp       atomic.Int64
++	uploadBlip         atomic.Int64
++	downloadBlip       atomic.Int64
++	uploadTotal        atomic.Int64
++	downloadTotal      atomic.Int64
++	proxyUploadTemp    atomic.Int64
++	proxyDownloadTemp  atomic.Int64
++	proxyUploadBlip    atomic.Int64
++	proxyDownloadBlip  atomic.Int64
++	proxyUploadTotal   atomic.Int64
++	proxyDownloadTotal atomic.Int64
++	pid                int32
++	memory             uint64
+ }
+ 
+ func (m *Manager) Join(c Tracker) {
++	if DefaultRequestNotify != nil {
++		DefaultRequestNotify(c)
++	}
+ 	m.connections.Store(c.ID(), c)
+ }
+ 
+@@ -58,12 +67,20 @@ func (m *Manager) Range(f func(c Tracker) bool) {
+ 	})
+ }
+ 
+-func (m *Manager) PushUploaded(size int64) {
++func (m *Manager) PushUploaded(lastChain string, size int64) {
++	if lastChain != "DIRECT" {
++		m.proxyUploadTemp.Add(size)
++		m.proxyUploadTotal.Add(size)
++	}
+ 	m.uploadTemp.Add(size)
+ 	m.uploadTotal.Add(size)
+ }
+ 
+-func (m *Manager) PushDownloaded(size int64) {
++func (m *Manager) PushDownloaded(lastChain string, size int64) {
++	if lastChain != "DIRECT" {
++		m.proxyDownloadTemp.Add(size)
++		m.proxyDownloadTotal.Add(size)
++	}
+ 	m.downloadTemp.Add(size)
+ 	m.downloadTotal.Add(size)
+ }
+@@ -110,6 +127,14 @@ func (m *Manager) ResetStatistic() {
+ 	m.downloadTemp.Store(0)
+ 	m.downloadBlip.Store(0)
+ 	m.downloadTotal.Store(0)
++
++	m.proxyUploadTemp.Store(0)
++	m.proxyUploadBlip.Store(0)
++	m.proxyUploadTotal.Store(0)
++	m.proxyDownloadTemp.Store(0)
++	m.proxyDownloadBlip.Store(0)
++	m.proxyDownloadTotal.Store(0)
++
+ }
+ 
+ func (m *Manager) handle() {
+@@ -118,6 +143,8 @@ func (m *Manager) handle() {
+ 	for range ticker.C {
+ 		m.uploadBlip.Store(m.uploadTemp.Swap(0))
+ 		m.downloadBlip.Store(m.downloadTemp.Swap(0))
++		m.proxyUploadBlip.Store(m.proxyUploadTemp.Swap(0))
++		m.proxyDownloadBlip.Store(m.proxyDownloadTemp.Swap(0))
+ 	}
+ }
+ 
+diff --git a/tunnel/statistic/patch.go b/tunnel/statistic/patch.go
+new file mode 100644
+index 0000000..3f170ee
+--- /dev/null
++++ b/tunnel/statistic/patch.go
+@@ -0,0 +1,19 @@
++package statistic
++
++type RequestNotify func(c Tracker)
++
++var DefaultRequestNotify RequestNotify
++
++func (m *Manager) TotalTraffic(onlyProxy bool) (up, down int64) {
++	if onlyProxy {
++		return m.proxyUploadTotal.Load(), m.proxyDownloadTotal.Load()
++	}
++	return m.uploadTotal.Load(), m.downloadTotal.Load()
++}
++
++func (m *Manager) NowTraffic(onlyProxy bool) (up, down int64) {
++	if onlyProxy {
++		return m.proxyUploadBlip.Load(), m.proxyDownloadBlip.Load()
++	}
++	return m.uploadBlip.Load(), m.downloadBlip.Load()
++}
+diff --git a/tunnel/statistic/patch_android.go b/tunnel/statistic/patch_android.go
+new file mode 100644
+index 0000000..1c4b43b
+--- /dev/null
++++ b/tunnel/statistic/patch_android.go
+@@ -0,0 +1,3 @@
++//go:build android
++
++package statistic
+diff --git a/tunnel/statistic/tracker.go b/tunnel/statistic/tracker.go
+index 2fbb1cf..fa9860a 100644
+--- a/tunnel/statistic/tracker.go
++++ b/tunnel/statistic/tracker.go
+@@ -53,7 +53,7 @@ func (tt *tcpTracker) Read(b []byte) (int, error) {
+ 	n, err := tt.Conn.Read(b)
+ 	download := int64(n)
+ 	if tt.pushToManager {
+-		tt.manager.PushDownloaded(download)
++		tt.manager.PushDownloaded(tt.Conn.Chains().Last(), download)
+ 	}
+ 	tt.DownloadTotal.Add(download)
+ 	return n, err
+@@ -63,7 +63,7 @@ func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
+ 	err = tt.Conn.ReadBuffer(buffer)
+ 	download := int64(buffer.Len())
+ 	if tt.pushToManager {
+-		tt.manager.PushDownloaded(download)
++		tt.manager.PushDownloaded(tt.Chains().Last(), download)
+ 	}
+ 	tt.DownloadTotal.Add(download)
+ 	return
+@@ -72,7 +72,7 @@ func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
+ func (tt *tcpTracker) UnwrapReader() (io.Reader, []N.CountFunc) {
+ 	return tt.Conn, []N.CountFunc{func(download int64) {
+ 		if tt.pushToManager {
+-			tt.manager.PushDownloaded(download)
++			tt.manager.PushDownloaded(tt.Chains().Last(), download)
+ 		}
+ 		tt.DownloadTotal.Add(download)
+ 	}}
+@@ -82,7 +82,7 @@ func (tt *tcpTracker) Write(b []byte) (int, error) {
+ 	n, err := tt.Conn.Write(b)
+ 	upload := int64(n)
+ 	if tt.pushToManager {
+-		tt.manager.PushUploaded(upload)
++		tt.manager.PushUploaded(tt.Chains().Last(), upload)
+ 	}
+ 	tt.UploadTotal.Add(upload)
+ 	return n, err
+@@ -92,7 +92,7 @@ func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
+ 	upload := int64(buffer.Len())
+ 	err = tt.Conn.WriteBuffer(buffer)
+ 	if tt.pushToManager {
+-		tt.manager.PushUploaded(upload)
++		tt.manager.PushUploaded(tt.Chains().Last(), upload)
+ 	}
+ 	tt.UploadTotal.Add(upload)
+ 	return
+@@ -101,7 +101,7 @@ func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
+ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
+ 	return tt.Conn, []N.CountFunc{func(upload int64) {
+ 		if tt.pushToManager {
+-			tt.manager.PushUploaded(upload)
++			tt.manager.PushUploaded(tt.Chains().Last(), upload)
+ 		}
+ 		tt.UploadTotal.Add(upload)
+ 	}}
+@@ -119,7 +119,7 @@ func (tt *tcpTracker) Upstream() any {
+ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.Rule, uploadTotal int64, downloadTotal int64, pushToManager bool) *tcpTracker {
+ 	metadata.RemoteDst = conn.RemoteDestination()
+ 
+-	t := &tcpTracker{
++	tt := &tcpTracker{
+ 		Conn:    conn,
+ 		manager: manager,
+ 		TrackerInfo: &TrackerInfo{
+@@ -137,20 +137,20 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
+ 
+ 	if pushToManager {
+ 		if uploadTotal > 0 {
+-			manager.PushUploaded(uploadTotal)
++			manager.PushUploaded(tt.Chains().Last(), uploadTotal)
+ 		}
+ 		if downloadTotal > 0 {
+-			manager.PushDownloaded(downloadTotal)
++			manager.PushDownloaded(tt.Chains().Last(), downloadTotal)
+ 		}
+ 	}
+ 
+ 	if rule != nil {
+-		t.TrackerInfo.Rule = rule.RuleType().String()
+-		t.TrackerInfo.RulePayload = rule.Payload()
++		tt.TrackerInfo.Rule = rule.RuleType().String()
++		tt.TrackerInfo.RulePayload = rule.Payload()
+ 	}
+ 
+-	manager.Join(t)
+-	return t
++	manager.Join(tt)
++	return tt
+ }
+ 
+ type udpTracker struct {
+@@ -173,7 +173,7 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
+ 	n, addr, err := ut.PacketConn.ReadFrom(b)
+ 	download := int64(n)
+ 	if ut.pushToManager {
+-		ut.manager.PushDownloaded(download)
++		ut.manager.PushDownloaded(ut.Chains().Last(), download)
+ 	}
+ 	ut.DownloadTotal.Add(download)
+ 	return n, addr, err
+@@ -183,7 +183,7 @@ func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
+ 	data, put, addr, err = ut.PacketConn.WaitReadFrom()
+ 	download := int64(len(data))
+ 	if ut.pushToManager {
+-		ut.manager.PushDownloaded(download)
++		ut.manager.PushDownloaded(ut.Chains().Last(), download)
+ 	}
+ 	ut.DownloadTotal.Add(download)
+ 	return
+@@ -193,7 +193,7 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
+ 	n, err := ut.PacketConn.WriteTo(b, addr)
+ 	upload := int64(n)
+ 	if ut.pushToManager {
+-		ut.manager.PushUploaded(upload)
++		ut.manager.PushUploaded(ut.Chains().Last(), upload)
+ 	}
+ 	ut.UploadTotal.Add(upload)
+ 	return n, err
+@@ -229,10 +229,10 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
+ 
+ 	if pushToManager {
+ 		if uploadTotal > 0 {
+-			manager.PushUploaded(uploadTotal)
++			manager.PushUploaded(ut.Chains().Last(), uploadTotal)
+ 		}
+ 		if downloadTotal > 0 {
+-			manager.PushDownloaded(downloadTotal)
++			manager.PushDownloaded(ut.Chains().Last(), downloadTotal)
+ 		}
+ 	}
+ 
+diff --git a/tunnel/tunnel.go b/tunnel/tunnel.go
+index 86dbc14..92afa70 100644
+--- a/tunnel/tunnel.go
++++ b/tunnel/tunnel.go
+@@ -231,6 +231,7 @@ func UpdateProxies(newProxies map[string]C.Proxy, newProviders map[string]P.Prox
+ 	configMux.Lock()
+ 	proxies = newProxies
+ 	providers = newProviders
++	invalidateAllProxies()
+ 	configMux.Unlock()
+ }
+ 
+@@ -336,7 +337,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
+ 	helper := C.RuleMatchHelper{
+ 		ResolveIP: func() {
+ 			if !resolved && metadata.Host != "" && !metadata.Resolved() {
+-				ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
++				ctx, cancel := context.WithTimeout(resolver.WithInitiator(context.Background(), resolver.InitiatorRule), resolver.DefaultDNSTimeout)
+ 				defer cancel()
+ 				ip, err := resolver.ResolveIP(ctx, metadata.Host)
+ 				if err != nil {
+@@ -351,7 +352,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
+ 		FindProcess: func() {
+ 			if attemptProcessLookup {
+ 				attemptProcessLookup = false
+-				if !features.CMFA {
++				if !features.Android {
+ 					// normal check for process
+ 					uid, path, err := process.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
+ 					if err != nil {

@@ -76,10 +76,13 @@ class Request {
       );
       if (response.statusCode != 200) return null;
       final data = response.data as Map<String, dynamic>;
-      final remoteVersion = data['tag_name'];
-      final version = globalState.packageInfo.version;
-      final hasUpdate =
-          compareVersions(remoteVersion.replaceAll('v', ''), version) > 0;
+      final releaseBuild = RegExp(
+        r'^Android version code: (\d+)$',
+        multiLine: true,
+      ).firstMatch(data['body'] as String? ?? '');
+      final hasUpdate = releaseBuild != null &&
+          int.parse(releaseBuild.group(1)!) >
+              int.parse(globalState.packageInfo.buildNumber);
       if (!hasUpdate) return null;
       return data;
     } catch (e) {
