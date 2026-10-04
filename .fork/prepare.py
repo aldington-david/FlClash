@@ -12,6 +12,8 @@ import sys
 import tempfile
 import time
 
+from overlay import apply as apply_overlay, fingerprint as overlay_fingerprint, verify as verify_overlay
+
 UPSTREAM = "chen08209/FlClash"
 CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
@@ -73,6 +75,9 @@ def main():
     release_tag = f"{app_tag}-anytls-{core_tag}"
     existing = api(f"repos/{REPO}/releases/tags/{release_tag}", missing_ok=True)
     if existing and not existing["draft"]:
+        required = {f"FlClash-{app_tag[1:]}-android-arm64-v8a.apk", "SHA256SUMS", "BUILD-PROVENANCE.json", "SIGNING-CERTIFICATE.txt"}
+        if {asset["name"] for asset in existing["assets"]} != required or any(asset["size"] == 0 for asset in existing["assets"]):
+            raise ValueError("Published release has missing or unexpected assets; refusing to overwrite it")
         output(build="false", tag=release_tag)
         return
     destination = Path(os.environ.get("RELEASE_SOURCE", ROOT / "_release")).resolve()
@@ -86,6 +91,9 @@ def main():
         provenance = json.loads((destination / ".fork/provenance.json").read_text())
         if provenance["app_tag"] != app_tag or provenance["core_tag"] != core_tag:
             raise ValueError("Existing tag has different source provenance")
+        if provenance.get("overlay_sha256") != overlay_fingerprint():
+            raise ValueError("Unpublished source tag uses a different overlay; back it up and recreate it before retrying")
+        verify_overlay(destination)
         run("git", "submodule", "update", "--init", "--depth", "1", cwd=destination)
     else:
         app_sha = run("git", "rev-parse", "HEAD", cwd=destination)
@@ -102,8 +110,7 @@ def main():
             if file.is_file():
                 file.unlink()
         shutil.copy2(ROOT / ".github/workflows/anytls-release.yml", destination / ".github/workflows/anytls-release.yml")
-        run("git", "apply", "--check", str(ROOT / ".fork/app.patch"), cwd=destination)
-        run("git", "apply", str(ROOT / ".fork/app.patch"), cwd=destination)
+        apply_overlay(destination)
         if core_path.exists():
             core_path.rmdir()  # git creates an empty directory for an uninitialized submodule.
         run("git", "clone", "--depth", "1", "--branch", core_tag, f"https://github.com/{CORE}.git", str(core_path))
@@ -132,7 +139,7 @@ def main():
                           core_repository=CORE, core_tag=core_tag, core_sha=core_sha,
                           compatibility_repository="chen08209/Clash.Meta", compatibility_sha=upstream_core_sha,
                           compatibility_patch_sha256=hashlib.sha256(compatibility.encode()).hexdigest(),
-                          version_code=code, **versions)
+                          version_code=code, overlay_sha256=overlay_fingerprint(), firebase_disabled=True, **versions)
         (destination / ".fork/provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
         run("git", "apply", "--check", str(destination / ".fork/flclash-compat.patch"), cwd=core_path)
         run("git", "add", "--all", cwd=destination)

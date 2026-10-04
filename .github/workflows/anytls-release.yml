@@ -29,9 +29,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check fork customization constraints
+        run: python3 .fork/test_overlay.py
+
       - name: Prepare pinned upstream and core sources
         id: prepare
         run: python3 .fork/prepare.py
+
+      - name: Replay the overlay against the selected upstream source
+        if: steps.prepare.outputs.build == 'true'
+        run: |
+          app_sha="$(python3 -c 'import json,os; from pathlib import Path; print(json.loads((Path(os.environ["RELEASE_SOURCE"])/".fork/provenance.json").read_text())["app_sha"])')"
+          python3 .fork/test_overlay.py --repository "$RELEASE_SOURCE" --ref "$app_sha"
 
       - uses: actions/setup-java@v4
         if: steps.prepare.outputs.build == 'true'
@@ -96,7 +105,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         if: steps.prepare.outputs.build == 'true'
         with:
-          channel: master
+          channel: stable
           flutter-version: ${{ steps.prepare.outputs.flutter_version }}
           cache: true
 
@@ -114,9 +123,36 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
+          set -euo pipefail
           flutter pub get
+          flutter analyze --no-fatal-infos
+          cp pubspec.yaml "$RUNNER_TEMP/flclash-test-pubspec.yaml"
+          trap 'cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('pubspec.yaml')
+          text = path.read_text()
+          assert text.count('build_assets: true') == 2, 'Native hook configuration changed'
+          path.write_text(text.replace('build_assets: true', 'build_assets: false'))
+          PY
+          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart
+          cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml
+          trap - EXIT
           dart format lib/common/request.dart
           dart setup.dart android --arch arm64 --env stable -v
+
+      - name: Verify Firebase is absent from the release runtime
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.fork/overlay.py" verify .
+          report="$RUNNER_TEMP/flclash-signing-diagnostics/firebase-runtime.txt"
+          (cd android && ./gradlew --console=plain :app:dependencies --configuration releaseRuntimeClasspath) > "$report"
+          if grep -Ei 'com\.google\.firebase|com\.google\.android\.gms:play-services-measurement' "$report"; then
+            echo 'Firebase or Analytics dependency found in the release runtime' >&2
+            exit 1
+          fi
 
       - name: Verify artifact, signature, package identity, and release metadata
         if: steps.prepare.outputs.build == 'true'
@@ -165,7 +201,9 @@ jobs:
           APP_VERSION: ${{ steps.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > release-state.json 2>/dev/null; then
+            python3 -c "import json; assert json.load(open('release-state.json'))['isDraft'], 'Refusing to overwrite a published release'"
+          else
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "FlClash ${APP_VERSION} · AnyTLS REALITY" --notes-file release.md
           fi
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk" dist/SHA256SUMS dist/BUILD-PROVENANCE.json dist/SIGNING-CERTIFICATE.txt
