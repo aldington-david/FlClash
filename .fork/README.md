@@ -18,7 +18,9 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。
 
-定制分为两类：签名、运行时行为仍使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。`firebase-native-symbols.patch` 仅在上游加入对应 Crashlytics 构建功能时应用，移除导入、扩展配置和上传任务；不改动普通原生调试符号处理。`overlay.py` 在创建源码标签前检查所有已跟踪 Android 构建脚本与运行时源码，发现未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止 SDK 从其他依赖重新引入。
+定制分为两类：签名、运行时行为仍使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。`firebase-native-symbols.patch` 仅在上游加入对应 Crashlytics 构建功能时应用，移除导入、扩展配置和上传任务；不改动普通原生调试符号处理。`overlay.py` 在创建源码标签前检查所有已跟踪 Android 构建脚本与运行时源码，发现未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止统计 SDK 从其他依赖重新引入。
+
+扫码的 ML Kit 依赖链使用 Firebase 的基础 annotations/components/encoders 库，原 v0.8.98 APK 也包含这些基础库。运行时检查只放行这组明确的基础依赖，不全局排除它们，以免破坏扫码；Crashlytics、Analytics、Google measurement 和其他新出现的 Firebase SDK 均拒绝发布。这里的“禁用 Firebase”沿用本 fork 原有的含义：不初始化 Firebase，不加载统计/崩溃上报 SDK，不运行相应构建插件或上传任务。
 
 `.fork/provenance.json` 记录定制文件的规范化文本指纹 `overlay_sha256`。未发布标签若由旧版定制生成，重跑会明确拒绝复用；需先备份并重建该未发布标签。已公开 Release 只检查资产完整性，不因定制更新而重写；上传前也会再次检查仍为草稿。结构性上游改动仍可能需要人工适配，流程不会模糊匹配或忽略补丁错误。
 

@@ -141,7 +141,7 @@ jobs:
           dart format lib/common/request.dart
           dart setup.dart android --arch arm64 --env stable -v
 
-      - name: Verify Firebase is absent from the release runtime
+      - name: Verify Firebase telemetry is absent from the release runtime
         if: steps.prepare.outputs.build == 'true'
         working-directory: _release
         run: |
@@ -149,10 +149,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/.fork/overlay.py" verify .
           report="$RUNNER_TEMP/flclash-signing-diagnostics/firebase-runtime.txt"
           (cd android && ./gradlew --console=plain :app:dependencies --configuration releaseRuntimeClasspath) > "$report"
-          if grep -Ei 'com\.google\.firebase|com\.google\.android\.gms:play-services-measurement' "$report"; then
-            echo 'Firebase or Analytics dependency found in the release runtime' >&2
-            exit 1
-          fi
+          python3 "$GITHUB_WORKSPACE/.fork/check_firebase_runtime.py" "$report"
 
       - name: Verify artifact, signature, package identity, and release metadata
         if: steps.prepare.outputs.build == 'true'

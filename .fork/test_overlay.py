@@ -7,6 +7,7 @@ import unittest
 import zipfile
 
 from overlay import apply, replace_literal, verify
+from check_firebase_runtime import verify as verify_runtime
 
 
 class LiteralTest(unittest.TestCase):
@@ -20,6 +21,15 @@ class LiteralTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 replace_literal(text, "old", "new")
         self.assertEqual(replace_literal("unrelated", "old", "new", optional=True), "unrelated")
+
+    def test_runtime_keeps_barcode_support_but_rejects_telemetry_and_unknown_sdks(self):
+        verify_runtime("com.google.firebase:firebase-components:18.0.0\ncom.google.firebase:firebase-encoders-json:18.0.0")
+        for dependency in ("com.google.firebase:firebase-crashlytics-ndk:20.0.0",
+                           "com.google.firebase:firebase-analytics:23.0.0",
+                           "com.google.firebase:firebase-new-unknown:1.0.0",
+                           "com.google.android.gms:play-services-measurement-api:23.0.0"):
+            with self.assertRaises(ValueError):
+                verify_runtime(dependency)
 
 
 def replay(repository, ref):
