@@ -17,6 +17,7 @@ from overlay import apply as apply_overlay, fingerprint as overlay_fingerprint, 
 UPSTREAM = "chen08209/FlClash"
 CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
+FORK_REVISION = 2
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -72,7 +73,7 @@ def main():
         output(build="false", reason="Waiting for the first published custom mihomo release")
         return
     core_tag = stable_tag(core_release)
-    release_tag = f"{app_tag}-anytls-{core_tag}"
+    release_tag = f"{app_tag}-anytls-{core_tag}-r{FORK_REVISION}"
     existing = api(f"repos/{REPO}/releases/tags/{release_tag}", missing_ok=True)
     if existing and not existing["draft"]:
         required = {f"FlClash-{app_tag[1:]}-android-arm64-v8a.apk", "SHA256SUMS", "BUILD-PROVENANCE.json", "SIGNING-CERTIFICATE.txt"}
@@ -91,6 +92,8 @@ def main():
         provenance = json.loads((destination / ".fork/provenance.json").read_text())
         if provenance["app_tag"] != app_tag or provenance["core_tag"] != core_tag:
             raise ValueError("Existing tag has different source provenance")
+        if provenance.get("fork_revision") != FORK_REVISION:
+            raise ValueError("Existing tag has a different fork revision")
         if provenance.get("overlay_sha256") != overlay_fingerprint():
             raise ValueError("Unpublished source tag uses a different overlay; back it up and recreate it before retrying")
         verify_overlay(destination)
@@ -128,8 +131,8 @@ def main():
         run("git", "config", "-f", ".gitmodules", "submodule.core/Clash.Meta.url", f"https://github.com/{CORE}.git", cwd=destination)
         run("git", "config", "-f", ".gitmodules", "--unset", "submodule.core/Clash.Meta.branch", cwd=destination)
         code = 1_000_000_000 + int(os.environ["GITHUB_RUN_NUMBER"])
-        if code >= 2_100_000_000:
-            raise ValueError("Android versionCode limit reached")
+        if not 1_000_000_020 < code < 2_100_000_000:
+            raise ValueError("Android versionCode must upgrade the previous custom release and stay within its limit")
         pubspec = destination / "pubspec.yaml"
         content, count = re.subn(r"(?m)^version: .+$", f"version: {app_tag[1:]}+{code}", pubspec.read_text())
         if count != 1:
@@ -139,11 +142,12 @@ def main():
                           core_repository=CORE, core_tag=core_tag, core_sha=core_sha,
                           compatibility_repository="chen08209/Clash.Meta", compatibility_sha=upstream_core_sha,
                           compatibility_patch_sha256=hashlib.sha256(compatibility.encode()).hexdigest(),
-                          version_code=code, overlay_sha256=overlay_fingerprint(), firebase_disabled=True, **versions)
+                          version_code=code, fork_revision=FORK_REVISION, display_name="IFlClash",
+                          overlay_sha256=overlay_fingerprint(), firebase_disabled=True, **versions)
         (destination / ".fork/provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
         run("git", "apply", "--check", str(destination / ".fork/flclash-compat.patch"), cwd=core_path)
         run("git", "add", "--all", cwd=destination)
-        run("git", "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "-m", f"Build {app_tag} with AnyTLS REALITY core {core_tag}", cwd=destination)
+        run("git", "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "-m", f"chore(release): build IFlClash {app_tag} with core {core_tag}", cwd=destination)
         run("git", "tag", release_tag, cwd=destination)
         run("git", "push", f"https://github.com/{REPO}.git", f"refs/tags/{release_tag}", cwd=destination, env=auth_env())
     patch = destination / ".fork/flclash-compat.patch"

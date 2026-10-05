@@ -15,6 +15,11 @@ class LiteralTest(unittest.TestCase):
         for layout in ("openUrl('old')", "Link(url: 'old', label: 'name')"):
             result = replace_literal(layout, "'old'", "'new'")
             self.assertEqual(replace_literal(result, "'old'", "'new'"), result)
+        old, new = "appName,", "globalState.packageInfo.appName,"
+        self.assertEqual(replace_literal(old, old, new), new)
+        self.assertEqual(replace_literal(new, old, new), new)
+        with self.assertRaises(ValueError):
+            replace_literal(old + new, old, new)
 
     def test_missing_or_duplicate_values_stop_the_build(self):
         for text in ("", "old old", "old new", "new new"):
@@ -33,7 +38,7 @@ class LiteralTest(unittest.TestCase):
 
 
 def replay(repository, ref):
-    paths = ["android", "lib/common/constant.dart", "lib/common/request.dart", "lib/views/about.dart"]
+    paths = ["android", "lib/application.dart", "lib/common/constant.dart", "lib/common/request.dart", "lib/views/about.dart"]
     archive = subprocess.check_output(["git", "-c", "core.autocrlf=false", "-C", str(repository),
                                        "archive", "--format=zip", ref, "--", *paths])
     with tempfile.TemporaryDirectory(prefix="flclash-overlay-") as directory:

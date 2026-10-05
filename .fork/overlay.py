@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 CORE_URL = "https://github.com/aldington-david/mihomo"
@@ -18,20 +19,29 @@ def fingerprint():
 
 
 def replace_literal(text, old, new, *, optional=False):
-    count = text.count(old) + text.count(new)
+    new_count = text.count(new)
+    count = text.replace(new, "").count(old) + new_count
     if count != 1 and not (optional and count == 0):
         raise ValueError(f"Expected one occurrence of {old!r} or its fork value; found {count}")
-    return text.replace(old, new)
+    return text if new_count else text.replace(old, new)
 
 
 def verify(source):
     source = Path(source)
+    strings = ET.parse(source / "android/common/src/main/res/values/strings.xml").getroot()
+    if [item.text for item in strings.findall("string[@name='app_name']")] != ["IFlClash"]:
+        raise ValueError("Android display name must be IFlClash")
     about = (source / "lib/views/about.dart").read_text(encoding="utf-8")
     if about.count(CORE_URL) != 1 or "chen08209/Clash.Meta" in about:
         raise ValueError("About page must link only to the custom core")
     constants = (source / "lib/common/constant.dart").read_text(encoding="utf-8")
     if constants.count("'aldington-david/FlClash'") != 1 or "'chen08209/FlClash'" in constants:
         raise ValueError("App update repository is not the fork")
+    if "const appName = 'FlClash';" not in constants:
+        raise ValueError("The existing backup directory and internal app name must remain unchanged")
+    for name in ("lib/application.dart", "lib/views/about.dart"):
+        if (source / name).read_text(encoding="utf-8").count("globalState.packageInfo.appName") != 1:
+            raise ValueError("UI must use the installed app display name: " + name)
     app = (source / "android/app/build.gradle.kts").read_text(encoding="utf-8")
     for required in ('applicationId = "com.github.aldingtondavid.flclash"', 'storeType = "PKCS12"',
                      'error("Release signing is required for the AnyTLS REALITY fork")'):
@@ -63,8 +73,10 @@ def apply(source):
         subprocess.run(["git", "apply", "--check", str(patch)], cwd=source, check=True)
         subprocess.run(["git", "apply", str(patch)], cwd=source, check=True)
     replacements = {
+        "lib/application.dart": [("title: appName,", "title: globalState.packageInfo.appName,", False)],
         "lib/common/constant.dart": [("'chen08209/FlClash'", "'aldington-david/FlClash'", False)],
         "lib/views/about.dart": [
+            ("appName,", "globalState.packageInfo.appName,", False),
             ("'https://github.com/chen08209/Clash.Meta/tree/FlClash'", f"'{CORE_URL}'", False),
             ("'github.com/chen08209/Clash.Meta'", "'github.com/aldington-david/mihomo'", True),
         ],

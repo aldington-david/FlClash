@@ -168,6 +168,7 @@ jobs:
           "$build_tools/aapt" dump badging "$apk" > "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           python3 "$GITHUB_WORKSPACE/.fork/verify_signing.py" dist/SIGNING-CERTIFICATE.txt
           grep -q "name='com.github.aldingtondavid.flclash'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
+          grep -q "^application-label:'IFlClash'$" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           grep -q "native-code: 'arm64-v8a'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           (cd dist && sha256sum *.apk > SHA256SUMS)
@@ -180,13 +181,14 @@ jobs:
                    run_url=f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}")
           Path('dist/BUILD-PROVENANCE.json').write_text(json.dumps(p, indent=2) + '\n')
           Path('release.md').write_text(
-              f"FlClash {p['app_tag']} with AnyTLS + REALITY.\n\n"
+              f"IFlClash {p['app_tag']} with AnyTLS + REALITY (fork revision {p['fork_revision']}).\n\n"
               f"Android version code: {p['version_code']}\n\n"
               f"App source: https://github.com/{p['app_repository']}/tree/{p['app_sha']}\n\n"
               f"Core source: https://github.com/{p['core_repository']}/tree/{p['core_sha']}\n\n"
               f"FlClash compatibility patch: https://github.com/{p['compatibility_repository']}/commit/{p['compatibility_sha']}\n\n"
               f"Build run: {p['run_url']}\n\n"
               "Independent package: `com.github.aldingtondavid.flclash`. Signed with this fork's stable key; can coexist with upstream.\n\n"
+              "Display name updated to IFlClash. Package ID and signing key are unchanged, so this updates the previous custom build.\n\n"
               "This build has no Firebase analytics or crash reporting. See BUILD-PROVENANCE.json for exact source pins.\n")
           PY
 
@@ -201,7 +203,7 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > release-state.json 2>/dev/null; then
             python3 -c "import json; assert json.load(open('release-state.json'))['isDraft'], 'Refusing to overwrite a published release'"
           else
-            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "FlClash ${APP_VERSION} · AnyTLS REALITY" --notes-file release.md
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "IFlClash ${APP_VERSION} · AnyTLS REALITY" --notes-file release.md
           fi
           gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk" dist/SHA256SUMS dist/BUILD-PROVENANCE.json dist/SIGNING-CERTIFICATE.txt
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest --notes-file release.md

@@ -101,7 +101,7 @@ index 1e795f3..560a3e1 100644
  <?xml version="1.0" encoding="utf-8"?>
  <resources>
 -    <string name="app_name">FlClash</string>
-+    <string name="app_name">FlClash AnyTLS REALITY</string>
++    <string name="app_name">IFlClash</string>
      <string name="service_channel_name">FlClash Service</string>
  </resources>
 diff --git a/android/gradle.properties b/android/gradle.properties

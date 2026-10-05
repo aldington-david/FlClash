@@ -173,7 +173,7 @@ class ApplicationState extends ConsumerState<Application> {
             );
           },
           scrollBehavior: const BaseScrollBehavior(),
-          title: appName,
+          title: globalState.packageInfo.appName,
           locale: getLocaleForString(locale),
           supportedLocales: AppLocalizations.delegate.supportedLocales,
           themeMode: themeProps.themeMode,

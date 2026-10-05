@@ -1,12 +1,14 @@
-# FlClash AnyTLS REALITY
+# IFlClash
 
-本仓库发布独立 Android 应用，包名为 `com.github.aldingtondavid.flclash`，显示名为 **FlClash AnyTLS REALITY**。它与官方应用共存，使用本仓库自己的固定签名，不可覆盖安装官方 APK。
+本仓库发布独立 Android 应用，包名为 `com.github.aldingtondavid.flclash`，显示名为 **IFlClash**。它与官方应用共存，使用本仓库自己的固定签名，不可覆盖安装官方 APK。此前的定制版名称为 FlClash AnyTLS REALITY；本次只改显示名称，保留包名和签名，可升级此前的定制版并沿用数据。
+
+图标、系统 VPN 提示、应用标题和关于页采用安装包中的显示名称。内部 `appName` 保留 FlClash，以保持 WebDAV 备份目录等既有行为。安装包文件名和更新下载匹配规则保持不变。
 
 每小时第 47 分钟检查 `chen08209/FlClash` 与 `aldington-david/mihomo` 最新正式 Release。任一正式版本更新后，固定双方 tag 和 commit，构建且仅发布 `FlClash-版本-android-arm64-v8a.apk`；另外提供校验和、签名证书摘要与来源记录。GitHub 计划任务可能延迟，也可以手动执行 Actions。
 
 FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。当前上游使用单个 `feat: support FlClash` commit 承载兼容代码；若布局改变、补丁冲突、Go 测试或 Android 构建失败，Actions 会停止发布，需审查适配。
 
-维护分支为 `anytls-reality`。每个 Release tag 为 `应用tag-anytls-核心tag`；tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心更新。
+维护分支为 `anytls-reality`。当前命名修订的 Release tag 为 `应用tag-anytls-核心tag-r2`，不移动或覆盖此前公开的标签；tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
 
 手工复现须检出某个发布 tag，执行 `git submodule update --init`，然后执行 `git -C core/Clash.Meta apply ../../.fork/flclash-compat.patch`，再按对应 workflow 的 Go/Flutter/NDK 版本构建。维护分支保存自动化和改动模板，不能直接视作已经集成对应核心的发布源码。
 
