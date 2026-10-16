@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -81,11 +82,13 @@ class Request {
       int? remoteBuild;
       if (body == null || body.isEmpty) {
         final tag = Uri.encodeComponent(data['tag_name'] as String);
-        final response = await dio.get<Map<String, dynamic>>(
+        final response = await dio.get<String>(
           'https://github.com/$repository/releases/download/$tag/BUILD-PROVENANCE.json',
-          options: Options(responseType: ResponseType.json),
+          options: Options(responseType: ResponseType.plain),
         );
-        final versionCode = response.data?['version_code'];
+        final metadata = jsonDecode(response.data ?? '');
+        final versionCode =
+            metadata is Map<String, dynamic> ? metadata['version_code'] : null;
         if (versionCode is int) {
           remoteBuild = versionCode;
         }

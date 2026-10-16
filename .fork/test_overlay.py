@@ -43,7 +43,7 @@ class LiteralTest(unittest.TestCase):
 class UpdateCheckTest(unittest.TestCase):
     def test_known_comparisons_keep_the_network_and_result_paths(self):
         for name, cast, spaces in (("data", "", "      "), ("release", " as String", "    ")):
-            text = ("  Future<Map<String, dynamic>?> checkForUpdate() async {\n"
+            text = ("import 'dart:async';\n  Future<Map<String, dynamic>?> checkForUpdate() async {\n"
                     f"{spaces}final remoteVersion = {name}['tag_name']{cast};\n"
                     f"{spaces}final version = globalState.packageInfo.version;\n"
                     f"{spaces}final hasUpdate =\n"
@@ -56,6 +56,8 @@ class UpdateCheckTest(unittest.TestCase):
             self.assertTrue(updated.endswith("latestRelease() async { return {}; }"))
             self.assertIn("versionCode is int", updated)
             self.assertIn("Uri.encodeComponent", updated)
+            self.assertIn("ResponseType.plain", updated)
+            self.assertEqual(updated.count("import 'dart:convert';"), 1)
             with self.assertRaisesRegex(ValueError, "Unknown or ambiguous"):
                 replace_update_check(text + text)
             with self.assertRaisesRegex(ValueError, "Unknown or ambiguous"):

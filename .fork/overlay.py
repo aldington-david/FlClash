@@ -14,11 +14,13 @@ UPDATE_CHECK = r"""final body = RELEASE['body'] as String?;
 int? remoteBuild;
 if (body == null || body.isEmpty) {
   final tag = Uri.encodeComponent(RELEASE['tag_name'] as String);
-  final response = await dio.get<Map<String, dynamic>>(
+  final response = await dio.get<String>(
     'https://github.com/$repository/releases/download/$tag/BUILD-PROVENANCE.json',
-    options: Options(responseType: ResponseType.json),
+    options: Options(responseType: ResponseType.plain),
   );
-  final versionCode = response.data?['version_code'];
+  final metadata = jsonDecode(response.data ?? '');
+  final versionCode =
+      metadata is Map<String, dynamic> ? metadata['version_code'] : null;
   if (versionCode is int) {
     remoteBuild = versionCode;
   }
@@ -47,7 +49,10 @@ def replace_update_check(text):
     if len(matches) != 1 or text.count("Future<Map<String, dynamic>?> checkForUpdate() async {") != 1:
         raise ValueError("Unknown or ambiguous upstream update-check structure")
     old, release, indent = matches[0]
-    return text.replace(old, textwrap.indent(UPDATE_CHECK.replace("RELEASE", release), indent))
+    text = text.replace(old, textwrap.indent(UPDATE_CHECK.replace("RELEASE", release), indent))
+    if "import 'dart:convert';" not in text:
+        text = replace_literal(text, "import 'dart:async';", "import 'dart:async';\nimport 'dart:convert';")
+    return text
 
 
 def fingerprint():
@@ -71,7 +76,7 @@ def verify(source):
     compact = "".join(request.split())
     comparisons = sum(compact.count("".join(UPDATE_CHECK.replace("RELEASE", value).split()))
                       for value in ("data", "release"))
-    if comparisons != 1 or "compareVersions(" in request:
+    if comparisons != 1 or "compareVersions(" in request or request.count("import 'dart:convert';") != 1:
         raise ValueError("Fork updates must compare verified Android version codes")
     strings = ET.parse(source / "android/common/src/main/res/values/strings.xml").getroot()
     if [item.text for item in strings.findall("string[@name='app_name']")] != ["IFlClash"]:
