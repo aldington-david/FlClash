@@ -88,10 +88,32 @@ class Request {
   /// Null when this build is current; throws when GitHub cannot be asked.
   Future<Map<String, dynamic>?> checkForUpdate() async {
     final release = await latestRelease();
-    final remoteVersion = release['tag_name'] as String;
-    final version = globalState.packageInfo.version;
+    final body = release['body'] as String?;
+    int? remoteBuild;
+    if (body == null || body.isEmpty) {
+      final tag = Uri.encodeComponent(release['tag_name'] as String);
+      final response = await dio.get<String>(
+        'https://github.com/$repository/releases/download/$tag/BUILD-PROVENANCE.json',
+        options: Options(responseType: ResponseType.plain),
+      );
+      final metadata = jsonDecode(response.data ?? '');
+      final versionCode =
+          metadata is Map<String, dynamic> ? metadata['version_code'] : null;
+      if (versionCode is int) {
+        remoteBuild = versionCode;
+      }
+    } else {
+      final releaseBuild = RegExp(
+        r'^Android version code: (\d+)$',
+        multiLine: true,
+      ).firstMatch(body);
+      remoteBuild = int.tryParse(releaseBuild?.group(1) ?? '');
+    }
+    if (remoteBuild == null || remoteBuild <= 0 || remoteBuild >= 2100000000) {
+      throw const FormatException('Missing or invalid Android version code');
+    }
     final hasUpdate =
-        compareVersions(remoteVersion.replaceAll('v', ''), version) > 0;
+        remoteBuild > int.parse(globalState.packageInfo.buildNumber);
     return hasUpdate ? release : null;
   }
 
