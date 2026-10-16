@@ -59,6 +59,22 @@ def auth_env():
                 GIT_CONFIG_VALUE_0=f"AUTHORIZATION: basic {token}")
 
 
+def compatibility_base(directory, revision):
+    parents = run("git", "rev-list", "--parents", "-n", "1", revision, cwd=directory).split()
+    if len(parents) != 2:
+        raise ValueError("FlClash compatibility commit must have one parent")
+    subject = run("git", "show", "-s", "--format=%s", revision, cwd=directory)
+    if subject == "feat: support FlClash":
+        return parents[1]
+    if (revision == "8380d0e7462f061a964323e9bf3129a236fcc5d5"
+            and parents[1] == "86a42fd8986243306705a525067dbcaa67bf0bb3"
+            and subject == "feat: list use providers among a group's proxies by use-position"):
+        baseline = compatibility_base(directory, parents[1])
+        if baseline == "88dcbf7f1614a67c3b36b848ee3592dfa92ada36":
+            return baseline
+    raise ValueError(f"Review new upstream core compatibility layout: {revision} {subject}")
+
+
 def main():
     if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
         last_commit = int(run("git", "log", "-1", "--format=%ct", cwd=ROOT))
@@ -118,15 +134,11 @@ def main():
             core_path.rmdir()  # git creates an empty directory for an uninitialized submodule.
         run("git", "clone", "--depth", "1", "--branch", core_tag, f"https://github.com/{CORE}.git", str(core_path))
         core_sha = run("git", "rev-parse", "HEAD", cwd=core_path)
-        # Upstream currently rebases one compatibility commit onto mihomo. Refuse
-        # a different layout rather than silently discard its Android API changes.
         with tempfile.TemporaryDirectory(prefix="flclash-compat-", dir=destination.parent) as directory:
             run("git", "init", directory)
-            run("git", "fetch", "--depth", "2", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
-            subject = run("git", "show", "-s", "--format=%s", upstream_core_sha, cwd=directory)
-            if subject != "feat: support FlClash":
-                raise ValueError(f"Review new upstream core compatibility layout: {subject}")
-            compatibility = run("git", "diff", "--binary", f"{upstream_core_sha}^", upstream_core_sha, cwd=directory, strip=False)
+            run("git", "fetch", "--depth", "3", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
+            compatibility_base_sha = compatibility_base(directory, upstream_core_sha)
+            compatibility = run("git", "diff", "--binary", compatibility_base_sha, upstream_core_sha, cwd=directory, strip=False)
         (destination / ".fork/flclash-compat.patch").write_text(compatibility, encoding="utf-8", newline="\n")
         run("git", "config", "-f", ".gitmodules", "submodule.core/Clash.Meta.url", f"https://github.com/{CORE}.git", cwd=destination)
         run("git", "config", "-f", ".gitmodules", "--unset", "submodule.core/Clash.Meta.branch", cwd=destination)
@@ -141,6 +153,7 @@ def main():
         provenance = dict(app_repository=UPSTREAM, app_tag=app_tag, app_sha=app_sha,
                           core_repository=CORE, core_tag=core_tag, core_sha=core_sha,
                           compatibility_repository="chen08209/Clash.Meta", compatibility_sha=upstream_core_sha,
+                          compatibility_base_sha=compatibility_base_sha,
                           compatibility_patch_sha256=hashlib.sha256(compatibility.encode()).hexdigest(),
                           version_code=code, fork_revision=FORK_REVISION, display_name="IFlClash",
                           overlay_sha256=overlay_fingerprint(), firebase_disabled=True, **versions)

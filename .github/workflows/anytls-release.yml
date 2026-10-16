@@ -97,10 +97,20 @@ jobs:
         run: |
           go -C Clash.Meta test ./adapter/outbound -run '^TestAnyTLSReality' -count=1 -timeout=90s
           CGO_ENABLED=0 go test -mod=mod -count=1 .
-          CGO_ENABLED=0 go vet -mod=mod .
-          export CGO_ENABLED=1 GOOS=android GOARCH=arm64
-          export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
-          go build -mod=mod -tags=with_gvisor -buildmode=c-shared -o "$RUNNER_TEMP/libclash-check.so" .
+          case "$(CGO_ENABLED=0 go list -mod=mod -f '{{.Name}}' .)" in
+            main)
+              CGO_ENABLED=0 go vet -mod=mod .
+              export CGO_ENABLED=1 GOOS=android GOARCH=arm64
+              export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+              go build -mod=mod -tags=with_gvisor -buildmode=c-shared -o "$RUNNER_TEMP/libclash-check.so" .
+              ;;
+            core)
+              test -f mobile/mobile.go && test -f cmd/core/main.go
+              CGO_ENABLED=0 go vet -mod=mod . ./cmd/...
+              CGO_ENABLED=0 GOOS=android GOARCH=arm64 go vet -mod=mod -tags=with_gvisor . ./mobile ./tun ./platform
+              ;;
+            *) echo 'Unknown FlClash core entry point' >&2; exit 1 ;;
+          esac
 
       - uses: subosito/flutter-action@v2
         if: steps.prepare.outputs.build == 'true'
@@ -135,7 +145,7 @@ jobs:
           assert text.count('build_assets: true') == 2, 'Native hook configuration changed'
           path.write_text(text.replace('build_assets: true', 'build_assets: false'))
           PY
-          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart
+          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart
           cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml
           trap - EXIT
           dart format lib/common/request.dart

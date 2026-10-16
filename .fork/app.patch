@@ -113,25 +113,3 @@ index cac97e8..766cde0 100644
  # This newDsl flag was added automatically by Flutter migrator
  android.newDsl=false
 +force-version-code-ignoring-abi=true
-diff --git a/lib/common/request.dart b/lib/common/request.dart
-index 02ece6b..569141a 100644
---- a/lib/common/request.dart
-+++ b/lib/common/request.dart
-@@ -77,10 +77,13 @@ class Request {
-       );
-       if (response.statusCode != 200) return null;
-       final data = response.data as Map<String, dynamic>;
--      final remoteVersion = data['tag_name'];
--      final version = globalState.packageInfo.version;
--      final hasUpdate =
--          compareVersions(remoteVersion.replaceAll('v', ''), version) > 0;
-+      final releaseBuild = RegExp(
-+        r'^Android version code: (\d+)$',
-+        multiLine: true,
-+      ).firstMatch(data['body'] as String? ?? '');
-+      final hasUpdate = releaseBuild != null &&
-+          int.parse(releaseBuild.group(1)!) >
-+              int.parse(globalState.packageInfo.buildNumber);
-       if (!hasUpdate) return null;
-       return data;
-     } catch (e) {

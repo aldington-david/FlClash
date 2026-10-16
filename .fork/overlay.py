@@ -4,11 +4,50 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import textwrap
 import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 CORE_URL = "https://github.com/aldington-david/mihomo"
-OVERLAY_FILES = ("app.patch", "firebase-native-symbols.patch", "overlay.py")
+OVERLAY_FILES = ("app.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in")
+UPDATE_CHECK = r"""final body = RELEASE['body'] as String?;
+int? remoteBuild;
+if (body == null || body.isEmpty) {
+  final tag = Uri.encodeComponent(RELEASE['tag_name'] as String);
+  final response = await dio.get<Map<String, dynamic>>(
+    'https://github.com/$repository/releases/download/$tag/BUILD-PROVENANCE.json',
+    options: Options(responseType: ResponseType.json),
+  );
+  final versionCode = response.data?['version_code'];
+  if (versionCode is int) {
+    remoteBuild = versionCode;
+  }
+} else {
+  final releaseBuild = RegExp(
+    r'^Android version code: (\d+)$',
+    multiLine: true,
+  ).firstMatch(body);
+  remoteBuild = int.tryParse(releaseBuild?.group(1) ?? '');
+}
+if (remoteBuild == null || remoteBuild <= 0 || remoteBuild >= 2100000000) {
+  throw const FormatException('Missing or invalid Android version code');
+}
+final hasUpdate =
+    remoteBuild > int.parse(globalState.packageInfo.buildNumber);"""
+
+
+def replace_update_check(text):
+    matches = []
+    for release, cast, indent in (("data", "", "      "), ("release", " as String", "    ")):
+        old = (f"{indent}final remoteVersion = {release}['tag_name']{cast};\n"
+               f"{indent}final version = globalState.packageInfo.version;\n"
+               f"{indent}final hasUpdate =\n"
+               f"{indent}    compareVersions(remoteVersion.replaceAll('v', ''), version) > 0;")
+        matches.extend([(old, release, indent)] * text.count(old))
+    if len(matches) != 1 or text.count("Future<Map<String, dynamic>?> checkForUpdate() async {") != 1:
+        raise ValueError("Unknown or ambiguous upstream update-check structure")
+    old, release, indent = matches[0]
+    return text.replace(old, textwrap.indent(UPDATE_CHECK.replace("RELEASE", release), indent))
 
 
 def fingerprint():
@@ -28,6 +67,12 @@ def replace_literal(text, old, new, *, optional=False):
 
 def verify(source):
     source = Path(source)
+    request = (source / "lib/common/request.dart").read_text(encoding="utf-8")
+    compact = "".join(request.split())
+    comparisons = sum(compact.count("".join(UPDATE_CHECK.replace("RELEASE", value).split()))
+                      for value in ("data", "release"))
+    if comparisons != 1 or "compareVersions(" in request:
+        raise ValueError("Fork updates must compare verified Android version codes")
     strings = ET.parse(source / "android/common/src/main/res/values/strings.xml").getroot()
     if [item.text for item in strings.findall("string[@name='app_name']")] != ["IFlClash"]:
         raise ValueError("Android display name must be IFlClash")
@@ -72,6 +117,17 @@ def apply(source):
     for patch in patches:
         subprocess.run(["git", "apply", "--check", str(patch)], cwd=source, check=True)
         subprocess.run(["git", "apply", str(patch)], cwd=source, check=True)
+    request = source / "lib/common/request.dart"
+    text = request.read_text(encoding="utf-8")
+    request.write_text(replace_update_check(text), encoding="utf-8", newline="\n")
+    tests = (HERE / "fork_update_test.dart.in").read_text(encoding="utf-8")
+    if "Future<Map<String, dynamic>> latestRelease() async {" in text:
+        tests = tests.replace("const hasReleaseRedirect = false;", "const hasReleaseRedirect = true;")
+    target = source / "test/common/fork_update_test.dart"
+    if target.exists():
+        raise ValueError("Upstream already defines the fork update test")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tests, encoding="utf-8", newline="\n")
     replacements = {
         "lib/application.dart": [("title: appName,", "title: globalState.packageInfo.appName,", False)],
         "lib/common/constant.dart": [("'chen08209/FlClash'", "'aldington-david/FlClash'", False)],

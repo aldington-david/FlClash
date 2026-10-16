@@ -77,13 +77,30 @@ class Request {
       );
       if (response.statusCode != 200) return null;
       final data = response.data as Map<String, dynamic>;
-      final releaseBuild = RegExp(
-        r'^Android version code: (\d+)$',
-        multiLine: true,
-      ).firstMatch(data['body'] as String? ?? '');
-      final hasUpdate = releaseBuild != null &&
-          int.parse(releaseBuild.group(1)!) >
-              int.parse(globalState.packageInfo.buildNumber);
+      final body = data['body'] as String?;
+      int? remoteBuild;
+      if (body == null || body.isEmpty) {
+        final tag = Uri.encodeComponent(data['tag_name'] as String);
+        final response = await dio.get<Map<String, dynamic>>(
+          'https://github.com/$repository/releases/download/$tag/BUILD-PROVENANCE.json',
+          options: Options(responseType: ResponseType.json),
+        );
+        final versionCode = response.data?['version_code'];
+        if (versionCode is int) {
+          remoteBuild = versionCode;
+        }
+      } else {
+        final releaseBuild = RegExp(
+          r'^Android version code: (\d+)$',
+          multiLine: true,
+        ).firstMatch(body);
+        remoteBuild = int.tryParse(releaseBuild?.group(1) ?? '');
+      }
+      if (remoteBuild == null || remoteBuild <= 0 || remoteBuild >= 2100000000) {
+        throw const FormatException('Missing or invalid Android version code');
+      }
+      final hasUpdate =
+          remoteBuild > int.parse(globalState.packageInfo.buildNumber);
       if (!hasUpdate) return null;
       return data;
     } catch (e) {

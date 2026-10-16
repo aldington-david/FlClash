@@ -6,7 +6,7 @@
 
 每小时第 47 分钟检查 `chen08209/FlClash` 与 `aldington-david/mihomo` 最新正式 Release。任一正式版本更新后，固定双方 tag 和 commit，构建且仅发布 `FlClash-版本-android-arm64-v8a.apk`；另外提供校验和、签名证书摘要与来源记录。GitHub 计划任务可能延迟，也可以手动执行 Actions。
 
-FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。当前上游使用单个 `feat: support FlClash` commit 承载兼容代码；若布局改变、补丁冲突、Go 测试或 Android 构建失败，Actions 会停止发布，需审查适配。
+FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit，以及 v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层兼容改动；后者从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
 
 维护分支为 `anytls-reality`。当前命名修订的 Release tag 为 `应用tag-anytls-核心tag-r2`，不移动或覆盖此前公开的标签；tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
 
@@ -18,15 +18,15 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 `android/gradle.properties` 使用 Flutter 的 `force-version-code-ignoring-abi=true`，关闭拆分 APK 时默认增加的 ABI 编号偏移，使已安装应用与 Release 正文使用同一个 versionCode。`BUILD-PROVENANCE.json` 同时记录实际源码提交、执行 workflow 的提交及 Actions run URL。这里只固定源码与构建参数，不承诺重新打包后的字节完全一致。
 
-此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。
+此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。v0.9.0 的 API 限流回退仍保留；如果只取得标签、没有正文，就读取本仓库该标签的 `BUILD-PROVENANCE.json`，验证 `version_code` 是有效整数后比较。不会按标签语义版本比较，也不会采用响应中任意 `browser_download_url`。
 
-定制分为两类：签名、运行时行为仍使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。`firebase-native-symbols.patch` 仅在上游加入对应 Crashlytics 构建功能时应用，移除导入、扩展配置和上传任务；不改动普通原生调试符号处理。`overlay.py` 在创建源码标签前检查所有已跟踪 Android 构建脚本与运行时源码，发现未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止统计 SDK 从其他依赖重新引入。
+签名和 Android 平台改动使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。更新比较只接受旧版内联请求与 v0.9.0 `latestRelease()` 这两种已知代码块，保留其网络请求及异常处理；未知结构仍停止。`firebase-native-symbols.patch` 仅在上游加入对应 Crashlytics 构建功能时应用，移除导入、扩展配置和上传任务；不改动普通原生调试符号处理。`overlay.py` 在创建源码标签前检查所有已跟踪 Android 构建脚本与运行时源码，发现未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止统计 SDK 从其他依赖重新引入。
 
 扫码的 ML Kit 依赖链使用 Firebase 的基础 annotations/components/encoders 库，原 v0.8.98 APK 也包含这些基础库。运行时检查只放行这组明确的基础依赖，不全局排除它们，以免破坏扫码；Crashlytics、Analytics、Google measurement 和其他新出现的 Firebase SDK 均拒绝发布。这里的“禁用 Firebase”沿用本 fork 原有的含义：不初始化 Firebase，不加载统计/崩溃上报 SDK，不运行相应构建插件或上传任务。
 
 `.fork/provenance.json` 记录定制文件的规范化文本指纹 `overlay_sha256`。未发布标签若由旧版定制生成，重跑会明确拒绝复用；需先备份并重建该未发布标签。已公开 Release 只检查资产完整性，不因定制更新而重写；上传前也会再次检查仍为草稿。结构性上游改动仍可能需要人工适配，流程不会模糊匹配或忽略补丁错误。
 
-`python .fork/test_overlay.py --ref upstream/v0.8.98 --ref upstream/v0.8.99` 可在具备对应上游 Git 引用的维护 checkout 中，回放两版真实源码并检查缺失/重复链接和新增 Firebase 入口的拒绝行为。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。CI 还运行 Flutter 分析、相关测试和原有 Go/Android 编译检查。
+取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0` 可回放三版真实源码，并检查未知更新结构、错误内核提交链和新增 Firebase 入口会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。
 
