@@ -96,8 +96,8 @@ class AboutView extends ConsumerWidget {
               _buildLinkItem(
                 glyph: AppGlyphs.cpu,
                 title: appLocalizations.core,
-                url: 'https://github.com/chen08209/Clash.Meta/tree/FlClash',
-                label: 'github.com/chen08209/Clash.Meta',
+                url: 'https://github.com/aldington-david/mihomo',
+                label: 'github.com/aldington-david/mihomo',
               ),
               _buildLinkItem(
                 glyph: AppGlyphs.send,
@@ -167,7 +167,7 @@ class _AboutHero extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            appName,
+            globalState.packageInfo.appName,
             style: AppTextStyle.title2.of(context, emphasized: true),
           ),
           const SizedBox(height: 10),
