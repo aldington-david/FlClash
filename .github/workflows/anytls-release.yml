@@ -24,6 +24,8 @@ jobs:
       RELEASE_SOURCE: ${{ github.workspace }}/_release
       GOTOOLCHAIN: local
       GOTELEMETRY: 'off'
+      CA_BUNDLE: cacert-2026-09-25.pem
+      CA_BUNDLE_SHA256: a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,6 +43,14 @@ jobs:
         run: |
           app_sha="$(python3 -c 'import json,os; from pathlib import Path; print(json.loads((Path(os.environ["RELEASE_SOURCE"])/".fork/provenance.json").read_text())["app_sha"])')"
           python3 .fork/test_overlay.py --repository "$RELEASE_SOURCE" --ref "$app_sha"
+
+      - name: Fetch the pinned CA bundle for the core and Flutter
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: _release
+        run: |
+          bundle=core/Clash.Meta/component/ca/ca-certificates.crt
+          curl -fsSL --retry 3 -o "$bundle" "https://curl.se/ca/$CA_BUNDLE"
+          echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
 
       - uses: actions/setup-java@v4
         if: steps.prepare.outputs.build == 'true'
@@ -181,6 +191,10 @@ jobs:
           grep -q "^application-label:'IFlClash'$" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           grep -q "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
           grep -q "native-code: 'arm64-v8a'" "$RUNNER_TEMP/flclash-signing-diagnostics/apk-badging.txt"
+          ca_bundle="$RUNNER_TEMP/flclash-ca-certificates.crt"
+          unzip -p "$apk" assets/flutter_assets/core/Clash.Meta/component/ca/ca-certificates.crt > "$ca_bundle"
+          echo "$CA_BUNDLE_SHA256  $ca_bundle" | sha256sum -c -
+          sha256sum "$ca_bundle" > "$RUNNER_TEMP/flclash-signing-diagnostics/apk-ca-bundle.txt"
           (cd dist && sha256sum *.apk > SHA256SUMS)
           python3 - <<'PY'
           import json, os, subprocess
@@ -188,6 +202,7 @@ jobs:
           p = json.loads(Path('.fork/provenance.json').read_text())
           p.update(controller_sha=os.environ['GITHUB_SHA'],
                    source_sha=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                   ca_bundle=os.environ['CA_BUNDLE'], ca_bundle_sha256=os.environ['CA_BUNDLE_SHA256'],
                    run_url=f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}")
           Path('dist/BUILD-PROVENANCE.json').write_text(json.dumps(p, indent=2) + '\n')
           Path('release.md').write_text(
