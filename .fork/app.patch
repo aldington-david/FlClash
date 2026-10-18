@@ -2,15 +2,6 @@ diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
 index 4079987..694fee3 100644
 --- a/android/app/build.gradle.kts
 +++ b/android/app/build.gradle.kts
-@@ -4,8 +4,6 @@ import java.util.Properties
- plugins {
-     id("com.android.application")
-     id("dev.flutter.flutter-gradle-plugin")
--    id("com.google.gms.google-services")
--    id("com.google.firebase.crashlytics")
- }
- 
- val localProperties = Properties().apply {
 @@ -35,7 +33,7 @@ android {
      }
  
@@ -38,61 +29,6 @@ index 4079987..694fee3 100644
              }
  
              proguardFiles(
-@@ -107,9 +105,6 @@ dependencies {
-     implementation(libs.smali.dexlib2) {
-         exclude(group = "com.google.guava", module = "guava")
-     }
--    implementation(platform(libs.firebase.bom))
--    implementation(libs.firebase.crashlytics.ndk)
--    implementation(libs.firebase.analytics)
-     testImplementation(libs.junit)
-     testImplementation(libs.kotlinx.coroutines.test)
- }
-diff --git a/android/common/build.gradle.kts b/android/common/build.gradle.kts
-index 352920b..32d4f5b 100644
---- a/android/common/build.gradle.kts
-+++ b/android/common/build.gradle.kts
-@@ -32,8 +32,5 @@ kotlin {
- dependencies {
-     implementation(libs.androidx.core)
-     implementation(libs.gson)
--    implementation(platform(libs.firebase.bom))
--    implementation(libs.firebase.crashlytics.ndk)
--    implementation(libs.firebase.analytics)
-     testImplementation(libs.junit)
- }
-diff --git a/android/common/src/main/java/com/follow/clash/common/GlobalState.kt b/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
-index 8e1f00f..6a71673 100644
---- a/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
-+++ b/android/common/src/main/java/com/follow/clash/common/GlobalState.kt
-@@ -4,8 +4,6 @@ import android.app.ActivityManager
- import android.app.Application
- import android.os.Build
- import android.util.Log
--import com.google.firebase.FirebaseApp
--import com.google.firebase.crashlytics.FirebaseCrashlytics
- import kotlinx.coroutines.CoroutineScope
- import kotlinx.coroutines.Dispatchers
- import kotlinx.coroutines.SupervisorJob
-@@ -37,16 +35,11 @@ object GlobalState : CoroutineScope by CoroutineScope(SupervisorJob() + Dispatch
-     }
- 
-     fun setCrashlytics(enable: Boolean) {
--        FirebaseApp.initializeApp(application)
--        FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = enable
--        if (enable) {
--            log("Crashlytics enabled")
--        }
-+        // This independent build has no Firebase project or upstream credentials.
-     }
- 
-     fun didCrashOnPreviousExecution(): Boolean {
--        FirebaseApp.initializeApp(application)
--        return FirebaseCrashlytics.getInstance().didCrashOnPreviousExecution()
-+        return false
-     }
- 
-     fun lastExitInfo(): Map<String, Any?>? {
 diff --git a/android/common/src/main/res/values/strings.xml b/android/common/src/main/res/values/strings.xml
 index 1e795f3..560a3e1 100644
 --- a/android/common/src/main/res/values/strings.xml

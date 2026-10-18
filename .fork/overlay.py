@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 CORE_URL = "https://github.com/aldington-david/mihomo"
-OVERLAY_FILES = ("app.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in")
+OVERLAY_FILES = ("app.patch", "firebase-runtime.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in")
 UPDATE_CHECK = r"""final body = RELEASE['body'] as String?;
 int? remoteBuild;
 if (body == null || body.isEmpty) {
@@ -116,6 +116,9 @@ def verify(source):
 def apply(source):
     source = Path(source)
     patches = [HERE / "app.patch"]
+    state = (source / "android/common/src/main/java/com/follow/clash/common/GlobalState.kt").read_text(encoding="utf-8")
+    if "import com.google.firebase.FirebaseApp" in state:
+        patches.append(HERE / "firebase-runtime.patch")
     app = (source / "android/app/build.gradle.kts").read_text(encoding="utf-8")
     if "CrashlyticsExtension" in app or "uploadCrashlytics" in app:
         patches.append(HERE / "firebase-native-symbols.patch")

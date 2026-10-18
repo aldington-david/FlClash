@@ -20,14 +20,16 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。v0.9.0 的 API 限流回退仍保留；如果只取得标签、没有正文，就读取本仓库该标签的 `BUILD-PROVENANCE.json`，验证 `version_code` 是有效整数后比较。不会按标签语义版本比较，也不会采用响应中任意 `browser_download_url`。
 
-签名和 Android 平台改动使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。更新比较只接受旧版内联请求与 v0.9.0 `latestRelease()` 这两种已知代码块，保留其网络请求及异常处理；未知结构仍停止。`firebase-native-symbols.patch` 仅在上游加入对应 Crashlytics 构建功能时应用，移除导入、扩展配置和上传任务；不改动普通原生调试符号处理。`overlay.py` 在创建源码标签前检查所有已跟踪 Android 构建脚本与运行时源码，发现未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止统计 SDK 从其他依赖重新引入。
+签名和 Android 平台改动使用严格的 `app.patch`；仓库和核心链接使用校验出现次数的字面量替换，不依赖“关于”页组件布局。更新比较只接受旧版内联请求与 v0.9.0 `latestRelease()` 这两种已知代码块，保留其网络请求及异常处理；未知结构仍停止。`firebase-runtime.patch` 仅在旧版 `GlobalState` 仍导入 `FirebaseApp` 时应用，移除 SDK 依赖并保留旧接口 stub；v0.9.1 已由上游删除这些代码，直接保留该结果。`firebase-native-symbols.patch` 的原有条件不变，移除对应 Crashlytics 导入、扩展配置和上传任务，不改动普通原生调试符号处理。无论走哪个版本分支，`overlay.py` 都检查所有已跟踪 Android 构建脚本与运行时源码，发现残留或未知 Firebase 入口立即停止；APK 打包后另查 releaseRuntimeClasspath，防止统计 SDK 从其他依赖重新引入。
 
 扫码的 ML Kit 依赖链使用 Firebase 的基础 annotations/components/encoders 库，原 v0.8.98 APK 也包含这些基础库。运行时检查只放行这组明确的基础依赖，不全局排除它们，以免破坏扫码；Crashlytics、Analytics、Google measurement 和其他新出现的 Firebase SDK 均拒绝发布。这里的“禁用 Firebase”沿用本 fork 原有的含义：不初始化 Firebase，不加载统计/崩溃上报 SDK，不运行相应构建插件或上传任务。
 
 `.fork/provenance.json` 记录定制文件的规范化文本指纹 `overlay_sha256`。未发布标签若由旧版定制生成，重跑会明确拒绝复用；需先备份并重建该未发布标签。已公开 Release 只检查资产完整性，不因定制更新而重写；上传前也会再次检查仍为草稿。结构性上游改动仍可能需要人工适配，流程不会模糊匹配或忽略补丁错误。
 
-取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0` 可回放三版真实源码，并检查未知更新结构、错误内核提交链和新增 Firebase 入口会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
+取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0 --ref v0.9.1` 可回放四版真实源码，并检查未知更新结构、错误内核提交链、新增 Firebase 入口及半删除状态会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。
+
+v0.9.1 使用上游固定的 `cacert-2026-09-25.pem` 补充应用信任根。构建下载后校验 SHA-256 `a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505`，再把证书包纳入 APK 资产；不修改宿主机证书存储。
 
 本地已通过 v1.19.32 + FlClash v0.8.98 兼容补丁的完整 Go wrapper 测试；最终 Android CGO、Flutter 构建、APK 签名与 ABI 检查由 Actions 执行。`python .fork/prepare.py --self-test` 可执行同步脚本的最小输入检查。

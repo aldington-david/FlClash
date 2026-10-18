@@ -136,7 +136,31 @@ def replay(repository, ref):
             assert "GlobalState.kt" in str(error), error
         else:
             raise AssertionError("Accepted a new native Firebase import")
-        print(ref + ": full overlay, update-code guard and five Firebase rejection cases passed")
+        subprocess.run(["git", "-C", str(source), "restore", "."], check=True)
+        (source / "test/common/fork_update_test.dart").unlink()
+        if "import com.google.firebase.FirebaseApp" in native.read_text(encoding="utf-8"):
+            common = source / "android/common/build.gradle.kts"
+            before = common.read_text(encoding="utf-8")
+            assert before.count("    implementation(libs.firebase.analytics)\n") == 1
+            common.write_text(before.replace(
+                "    implementation(libs.firebase.analytics)\n", "", 1), encoding="utf-8")
+            expected = subprocess.CalledProcessError
+        else:
+            before = app.read_text(encoding="utf-8")
+            assert before.count("dependencies {\n") == 1
+            app.write_text(before.replace(
+                "dependencies {\n", "dependencies {\n    implementation(libs.firebase.analytics)\n", 1), encoding="utf-8")
+            expected = ValueError
+        try:
+            apply(source)
+        except expected as error:
+            if isinstance(error, subprocess.CalledProcessError):
+                assert Path(error.cmd[-1]).name == "firebase-runtime.patch", error
+            else:
+                assert "Firebase executable reference" in str(error), error
+        else:
+            raise AssertionError("Accepted a partial Firebase removal or a residual SDK")
+        print(ref + ": full overlay, update-code guard, five Firebase rejection cases and partial-removal rejection passed")
 
 
 if __name__ == "__main__":
