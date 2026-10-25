@@ -1,0 +1,51 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index 4079987..694fee3 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -35,7 +33,7 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "com.follow.clash"
++        applicationId = "com.github.aldingtondavid.flclash"
+         minSdk = flutter.minSdkVersion
+         targetSdk = libs.versions.targetSdk.get().toInt()
+         versionCode = flutter.versionCode
+@@ -46,6 +44,7 @@ android {
+         if (hasReleaseSigning) {
+             create("release") {
+                 storeFile = releaseStoreFile
++                storeType = "PKCS12"
+                 storePassword = releaseStorePassword
+                 keyAlias = releaseKeyAlias
+                 keyPassword = releaseKeyPassword
+@@ -71,8 +70,7 @@ android {
+             if (hasReleaseSigning) {
+                 signingConfig = signingConfigs.getByName("release")
+             } else {
+-                signingConfig = signingConfigs.getByName("debug")
+-                applicationIdSuffix = ".dev"
++                error("Release signing is required for the AnyTLS REALITY fork")
+             }
+ 
+             proguardFiles(
+diff --git a/android/common/src/main/res/values/strings.xml b/android/common/src/main/res/values/strings.xml
+index 1e795f3..560a3e1 100644
+--- a/android/common/src/main/res/values/strings.xml
++++ b/android/common/src/main/res/values/strings.xml
+@@ -1,5 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="app_name">FlClash</string>
++    <string name="app_name">IFlClash</string>
+     <string name="service_channel_name">FlClash Service</string>
+ </resources>
+diff --git a/android/gradle.properties b/android/gradle.properties
+index cac97e8..766cde0 100644
+--- a/android/gradle.properties
++++ b/android/gradle.properties
+@@ -4,3 +4,4 @@ android.useAndroidX=true
+ android.builtInKotlin=false
+ # This newDsl flag was added automatically by Flutter migrator
+ android.newDsl=false
++force-version-code-ignoring-abi=true
