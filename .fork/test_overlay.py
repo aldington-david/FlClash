@@ -65,6 +65,39 @@ class UpdateCheckTest(unittest.TestCase):
 
 
 class CompatibilityBaseTest(unittest.TestCase):
+    def test_v092_requires_the_complete_reviewed_commit_chain(self):
+        rows = [
+            ("c5062921054902b25215a6a933e72ccd714c9bfa", "86e56192ddd815e2094212531c48a364eb35659d", "feat: resolve the route a connection would take without dialing it"),
+            ("86e56192ddd815e2094212531c48a364eb35659d", "6aeff178349cbbc89f1729d717a4eb8eba64a198", "feat: find the mapping a proxy provider builds a proxy from"),
+            ("6aeff178349cbbc89f1729d717a4eb8eba64a198", "cd1023ac150fd74dc96ad5701d9b10a56fbe5d20", "feat: clear every DNS answer and client state on request"),
+            ("cd1023ac150fd74dc96ad5701d9b10a56fbe5d20", "edc32bd7e7ad1a5f74263595f93eace4342d9336", "feat: list use providers among a group's proxies by use-position"),
+            ("edc32bd7e7ad1a5f74263595f93eace4342d9336", "3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8", "feat: support FlClash"),
+        ]
+        actual = list(rows)
+
+        def git(*args, **kwargs):
+            if args[1] == "log":
+                return "\n".join("\0".join(row) for row in actual)
+            if args[1] == "rev-list":
+                return f"{args[-1]} {rows[0][1]}"
+            return rows[0][2]
+
+        with patch("prepare.run", side_effect=git):
+            self.assertEqual(compatibility_base("unused", rows[0][0]), rows[-1][1])
+            with self.assertRaises(ValueError):
+                compatibility_base("unused", "unknown-later-tip")
+            actual = rows[:-1]
+            with self.assertRaises(ValueError):
+                compatibility_base("unused", rows[0][0])
+            for index, value in ((0, "unknown-commit"), (1, "unknown-parent"),
+                                 (1, rows[1][1] + " extra-merge-parent"), (2, "feat: unreviewed change")):
+                actual = list(rows)
+                changed = list(actual[1])
+                changed[index] = value
+                actual[1] = tuple(changed)
+                with self.assertRaises(ValueError):
+                    compatibility_base("unused", rows[0][0])
+
     def test_old_single_and_reviewed_two_commit_stack_reject_unknown_layouts(self):
         tip = "8380d0e7462f061a964323e9bf3129a236fcc5d5"
         support = "86a42fd8986243306705a525067dbcaa67bf0bb3"

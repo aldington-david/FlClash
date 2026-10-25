@@ -19,6 +19,14 @@ CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
 FORK_REVISION = 2
 ROOT = Path(__file__).resolve().parents[1]
+V092_CORE_CHAIN = (
+    ("c5062921054902b25215a6a933e72ccd714c9bfa", "feat: resolve the route a connection would take without dialing it"),
+    ("86e56192ddd815e2094212531c48a364eb35659d", "feat: find the mapping a proxy provider builds a proxy from"),
+    ("6aeff178349cbbc89f1729d717a4eb8eba64a198", "feat: clear every DNS answer and client state on request"),
+    ("cd1023ac150fd74dc96ad5701d9b10a56fbe5d20", "feat: list use providers among a group's proxies by use-position"),
+    ("edc32bd7e7ad1a5f74263595f93eace4342d9336", "feat: support FlClash"),
+    ("3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8", ""),
+)
 
 
 def run(*args, cwd=None, env=None, strip=True):
@@ -72,6 +80,12 @@ def compatibility_base(directory, revision):
         baseline = compatibility_base(directory, parents[1])
         if baseline == "88dcbf7f1614a67c3b36b848ee3592dfa92ada36":
             return baseline
+    if revision == V092_CORE_CHAIN[0][0]:
+        expected = [f"{child}\0{parent}\0{title}"
+                    for (child, title), (parent, _) in zip(V092_CORE_CHAIN, V092_CORE_CHAIN[1:])]
+        actual = run("git", "log", "-5", "--format=%H%x00%P%x00%s", revision, cwd=directory).splitlines()
+        if actual == expected:
+            return V092_CORE_CHAIN[-1][0]
     raise ValueError(f"Review new upstream core compatibility layout: {revision} {subject}")
 
 
@@ -136,7 +150,7 @@ def main():
         core_sha = run("git", "rev-parse", "HEAD", cwd=core_path)
         with tempfile.TemporaryDirectory(prefix="flclash-compat-", dir=destination.parent) as directory:
             run("git", "init", directory)
-            run("git", "fetch", "--depth", "3", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
+            run("git", "fetch", "--depth", "6", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
             compatibility_base_sha = compatibility_base(directory, upstream_core_sha)
             compatibility = run("git", "diff", "--binary", compatibility_base_sha, upstream_core_sha, cwd=directory, strip=False)
         (destination / ".fork/flclash-compat.patch").write_text(compatibility, encoding="utf-8", newline="\n")

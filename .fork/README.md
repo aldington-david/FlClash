@@ -6,7 +6,7 @@
 
 每小时第 47 分钟检查 `chen08209/FlClash` 与 `aldington-david/mihomo` 最新正式 Release。任一正式版本更新后，固定双方 tag 和 commit，构建且仅发布 `FlClash-版本-android-arm64-v8a.apk`；另外提供校验和、签名证书摘要与来源记录。GitHub 计划任务可能延迟，也可以手动执行 Actions。
 
-FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit，以及 v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层兼容改动；后者从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
+FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit、v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层改动，以及 v0.9.2 的 `3f27ef3 → edc32bd → cd1023a → 6aeff17 → 86e5619 → c506292` 五层改动。固定链逐项校验提交、父提交和标题，从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
 
 维护分支为 `anytls-reality`。当前命名修订的 Release tag 为 `应用tag-anytls-核心tag-r2`，不移动或覆盖此前公开的标签；tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
 
@@ -26,7 +26,7 @@ FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上�
 
 `.fork/provenance.json` 记录定制文件的规范化文本指纹 `overlay_sha256`。未发布标签若由旧版定制生成，重跑会明确拒绝复用；需先备份并重建该未发布标签。已公开 Release 只检查资产完整性，不因定制更新而重写；上传前也会再次检查仍为草稿。结构性上游改动仍可能需要人工适配，流程不会模糊匹配或忽略补丁错误。
 
-取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0 --ref v0.9.1` 可回放四版真实源码，并检查未知更新结构、错误内核提交链、新增 Firebase 入口及半删除状态会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
+取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0 --ref v0.9.1 --ref v0.9.2` 可回放五版真实源码，并检查未知更新结构、错误内核提交链、新增 Firebase 入口及半删除状态会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。
 
