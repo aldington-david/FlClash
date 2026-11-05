@@ -65,7 +65,7 @@ class UpdateCheckTest(unittest.TestCase):
 
 
 class CompatibilityBaseTest(unittest.TestCase):
-    def test_v092_requires_the_complete_reviewed_commit_chain(self):
+    def test_v092_and_v093_require_the_complete_reviewed_commit_chain(self):
         rows = [
             ("c5062921054902b25215a6a933e72ccd714c9bfa", "86e56192ddd815e2094212531c48a364eb35659d", "feat: resolve the route a connection would take without dialing it"),
             ("86e56192ddd815e2094212531c48a364eb35659d", "6aeff178349cbbc89f1729d717a4eb8eba64a198", "feat: find the mapping a proxy provider builds a proxy from"),
@@ -73,30 +73,37 @@ class CompatibilityBaseTest(unittest.TestCase):
             ("cd1023ac150fd74dc96ad5701d9b10a56fbe5d20", "edc32bd7e7ad1a5f74263595f93eace4342d9336", "feat: list use providers among a group's proxies by use-position"),
             ("edc32bd7e7ad1a5f74263595f93eace4342d9336", "3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8", "feat: support FlClash"),
         ]
-        actual = list(rows)
+        v093_rows = [
+            ("024245dc72bc92f48237f865119afe0cd53ac9e6", "04f718e618fe74015186673a4195d22fc71c7c4e", "fix: hold an unusable url-test pick for a second"),
+            ("04f718e618fe74015186673a4195d22fc71c7c4e", "4a8e40cf4dcbd92b0998d309a421aaf94f27ddae", "fix: leave an unmeasured url-test pick once a member is measured"),
+            ("4a8e40cf4dcbd92b0998d309a421aaf94f27ddae", "25fb06997dd5245236a3301b0bad4852a3991a48", "fix: test the proxies a provider update swaps in during a health check"),
+            ("25fb06997dd5245236a3301b0bad4852a3991a48", "c5062921054902b25215a6a933e72ccd714c9bfa", "feat: wait the host's delay test timeout in a health check that names none"),
+        ] + rows
 
         def git(*args, **kwargs):
             if args[1] == "log":
                 return "\n".join("\0".join(row) for row in actual)
             if args[1] == "rev-list":
-                return f"{args[-1]} {rows[0][1]}"
-            return rows[0][2]
+                return f"{args[-1]} {expected[0][1]}"
+            return expected[0][2]
 
         with patch("prepare.run", side_effect=git):
-            self.assertEqual(compatibility_base("unused", rows[0][0]), rows[-1][1])
-            with self.assertRaises(ValueError):
-                compatibility_base("unused", "unknown-later-tip")
-            actual = rows[:-1]
-            with self.assertRaises(ValueError):
-                compatibility_base("unused", rows[0][0])
-            for index, value in ((0, "unknown-commit"), (1, "unknown-parent"),
-                                 (1, rows[1][1] + " extra-merge-parent"), (2, "feat: unreviewed change")):
-                actual = list(rows)
-                changed = list(actual[1])
-                changed[index] = value
-                actual[1] = tuple(changed)
+            for expected in (rows, v093_rows):
+                actual = list(expected)
+                self.assertEqual(compatibility_base("unused", expected[0][0]), expected[-1][1])
                 with self.assertRaises(ValueError):
-                    compatibility_base("unused", rows[0][0])
+                    compatibility_base("unused", "unknown-later-tip")
+                actual = expected[:-1]
+                with self.assertRaises(ValueError):
+                    compatibility_base("unused", expected[0][0])
+                for index, value in ((0, "unknown-commit"), (1, "unknown-parent"),
+                                     (1, expected[1][1] + " extra-merge-parent"), (2, "feat: unreviewed change")):
+                    actual = list(expected)
+                    changed = list(actual[1])
+                    changed[index] = value
+                    actual[1] = tuple(changed)
+                    with self.assertRaises(ValueError):
+                        compatibility_base("unused", expected[0][0])
 
     def test_old_single_and_reviewed_two_commit_stack_reject_unknown_layouts(self):
         tip = "8380d0e7462f061a964323e9bf3129a236fcc5d5"

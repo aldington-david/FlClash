@@ -106,6 +106,7 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           go -C Clash.Meta test ./adapter/outbound -run '^TestAnyTLSReality' -count=1 -timeout=90s
+          go -C Clash.Meta test ./adapter/provider ./adapter/outboundgroup ./common/singledo -count=1 -timeout=90s
           CGO_ENABLED=0 go test -mod=mod -count=1 .
           case "$(CGO_ENABLED=0 go list -mod=mod -f '{{.Name}}' .)" in
             main)

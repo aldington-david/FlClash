@@ -27,6 +27,12 @@ V092_CORE_CHAIN = (
     ("edc32bd7e7ad1a5f74263595f93eace4342d9336", "feat: support FlClash"),
     ("3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8", ""),
 )
+V093_CORE_CHAIN = (
+    ("024245dc72bc92f48237f865119afe0cd53ac9e6", "fix: hold an unusable url-test pick for a second"),
+    ("04f718e618fe74015186673a4195d22fc71c7c4e", "fix: leave an unmeasured url-test pick once a member is measured"),
+    ("4a8e40cf4dcbd92b0998d309a421aaf94f27ddae", "fix: test the proxies a provider update swaps in during a health check"),
+    ("25fb06997dd5245236a3301b0bad4852a3991a48", "feat: wait the host's delay test timeout in a health check that names none"),
+) + V092_CORE_CHAIN
 
 
 def run(*args, cwd=None, env=None, strip=True):
@@ -80,12 +86,13 @@ def compatibility_base(directory, revision):
         baseline = compatibility_base(directory, parents[1])
         if baseline == "88dcbf7f1614a67c3b36b848ee3592dfa92ada36":
             return baseline
-    if revision == V092_CORE_CHAIN[0][0]:
-        expected = [f"{child}\0{parent}\0{title}"
-                    for (child, title), (parent, _) in zip(V092_CORE_CHAIN, V092_CORE_CHAIN[1:])]
-        actual = run("git", "log", "-5", "--format=%H%x00%P%x00%s", revision, cwd=directory).splitlines()
-        if actual == expected:
-            return V092_CORE_CHAIN[-1][0]
+    for chain in (V092_CORE_CHAIN, V093_CORE_CHAIN):
+        if revision == chain[0][0]:
+            expected = [f"{child}\0{parent}\0{title}"
+                        for (child, title), (parent, _) in zip(chain, chain[1:])]
+            actual = run("git", "log", f"-{len(chain) - 1}", "--format=%H%x00%P%x00%s", revision, cwd=directory).splitlines()
+            if actual == expected:
+                return chain[-1][0]
     raise ValueError(f"Review new upstream core compatibility layout: {revision} {subject}")
 
 
@@ -150,7 +157,7 @@ def main():
         core_sha = run("git", "rev-parse", "HEAD", cwd=core_path)
         with tempfile.TemporaryDirectory(prefix="flclash-compat-", dir=destination.parent) as directory:
             run("git", "init", directory)
-            run("git", "fetch", "--depth", "6", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
+            run("git", "fetch", "--depth", "10", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
             compatibility_base_sha = compatibility_base(directory, upstream_core_sha)
             compatibility = run("git", "diff", "--binary", compatibility_base_sha, upstream_core_sha, cwd=directory, strip=False)
         (destination / ".fork/flclash-compat.patch").write_text(compatibility, encoding="utf-8", newline="\n")
