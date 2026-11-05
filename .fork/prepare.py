@@ -134,7 +134,6 @@ def main():
         if provenance.get("overlay_sha256") != overlay_fingerprint():
             raise ValueError("Unpublished source tag uses a different overlay; back it up and recreate it before retrying")
         verify_overlay(destination)
-        run("git", "submodule", "update", "--init", "--depth", "1", cwd=destination)
     else:
         app_sha = run("git", "rev-parse", "HEAD", cwd=destination)
         upstream_core_sha = run("git", "ls-tree", "HEAD", "core/Clash.Meta", cwd=destination).split()[2]
@@ -184,6 +183,8 @@ def main():
         run("git", "-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "-m", f"chore(release): build IFlClash {app_tag} with core {core_tag}", cwd=destination)
         run("git", "tag", release_tag, cwd=destination)
         run("git", "push", f"https://github.com/{REPO}.git", f"refs/tags/{release_tag}", cwd=destination, env=auth_env())
+    run("git", "-c", "url.https://github.com/.insteadOf=git@github.com:",
+        "submodule", "update", "--init", "--depth", "1", cwd=destination)
     patch = destination / ".fork/flclash-compat.patch"
     if hashlib.sha256(patch.read_bytes()).hexdigest() != provenance["compatibility_patch_sha256"]:
         raise ValueError("Compatibility patch hash differs from release provenance")
