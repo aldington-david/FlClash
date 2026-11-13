@@ -2,13 +2,17 @@
 
 本仓库发布独立 Android 应用，包名为 `com.github.aldingtondavid.flclash`，显示名为 **IFlClash**。它与官方应用共存，使用本仓库自己的固定签名，不可覆盖安装官方 APK。此前的定制版名称为 FlClash AnyTLS REALITY；本次只改显示名称，保留包名和签名，可升级此前的定制版并沿用数据。
 
-图标、系统 VPN 提示、应用标题和关于页采用安装包中的显示名称。内部 `appName` 保留 FlClash，以保持 WebDAV 备份目录等既有行为。安装包文件名和更新下载匹配规则保持不变。
+图标、系统 VPN 提示、应用标题和关于页采用安装包中的显示名称。内部 `appName` 保留 FlClash，以保持 WebDAV 备份目录等既有行为。
 
-每小时第 47 分钟检查 `chen08209/FlClash` 与 `aldington-david/mihomo` 最新正式 Release。任一正式版本更新后，固定双方 tag 和 commit，构建且仅发布 `FlClash-版本-android-arm64-v8a.apk`；另外提供校验和、签名证书摘要与来源记录。GitHub 计划任务可能延迟，也可以手动执行 Actions。
+每小时第 47 分钟检查 `chen08209/FlClash` 与 `aldington-david/mihomo` 最新正式 Release。任一正式版本更新后，固定双方 tag 和 commit，构建且仅发布 `FlClash-完整发布tag去掉首位v-android-arm64-v8a.apk`；另外提供校验和、签名证书摘要与来源记录。GitHub 计划任务可能延迟，也可以手动执行 Actions。
 
 FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit、v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层改动，以及 v0.9.2 的 `3f27ef3 → edc32bd → cd1023a → 6aeff17 → 86e5619 → c506292` 五层改动。v0.9.3 在此基础上增加 `25fb069 → 4a8e40c → 04f718e → 024245d`，合计九层，涵盖健康检查超时、节点列表更新后的重新测速和 URLTest 选择缓存修正。固定链逐项校验提交、父提交和标题，从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
 
-维护分支为 `anytls-reality`。当前命名修订的 Release tag 为 `应用tag-anytls-核心tag-r2`，不移动或覆盖此前公开的标签；tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
+维护分支为 `anytls-reality`。当前修订的 Release tag 为 `应用tag-anytls-核心tag-r3`；此前公开的标签和文件保留原样。tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
+
+r3 对齐现有 v0.9.3 客户端的应用内更新规则：例如 `v0.9.3-anytls-v1.19.34-r3` 对应 `FlClash-0.9.3-anytls-v1.19.34-r3-android-arm64-v8a.apk`，`SHA256SUMS` 使用同一个名称。旧 r2 只含应用版本的文件名会在清单查找阶段触发“下载的更新未通过校验”；发布 r3 后，已安装的定制版 v0.9.3 可以直接重新检查并更新。APK 内部版本名仍为 `0.9.3`，包名和签名保持原值，版本码递增。
+
+发布前的 `check_update_asset.py` 直接执行该发布源码中的 `releaseAssetName`、`releaseAssetUri` 和 `releaseChecksum`，确认客户端请求名称、清单条目和实际 APK SHA-256 一致。检查在上传公开文件前执行，覆盖同一应用版本的核心升级场景。
 
 手工复现须检出某个发布 tag，执行 `git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --depth 1`，然后执行 `git -C core/Clash.Meta apply ../../.fork/flclash-compat.patch`，再按对应 workflow 的 Go/Flutter/NDK 版本构建。首次构建和重跑均按发布源码的 gitlink 初始化核心与 UI 子模块，包括 v0.9.3 新增的 `plugins/prism_ui`；命令级 HTTPS 替换支持匿名读取 GitHub 公共仓库，不修改全局 Git 配置，也不跟踪子模块分支的新提交。维护分支保存自动化和改动模板，不能直接视作已经集成对应核心的发布源码。
 

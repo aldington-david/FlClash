@@ -17,7 +17,7 @@ from overlay import apply as apply_overlay, fingerprint as overlay_fingerprint, 
 UPSTREAM = "chen08209/FlClash"
 CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
-FORK_REVISION = 2
+FORK_REVISION = 3
 ROOT = Path(__file__).resolve().parents[1]
 V092_CORE_CHAIN = (
     ("c5062921054902b25215a6a933e72ccd714c9bfa", "feat: resolve the route a connection would take without dialing it"),
@@ -111,9 +111,10 @@ def main():
         return
     core_tag = stable_tag(core_release)
     release_tag = f"{app_tag}-anytls-{core_tag}-r{FORK_REVISION}"
+    apk_name = f"FlClash-{release_tag[1:]}-android-arm64-v8a.apk"
     existing = api(f"repos/{REPO}/releases/tags/{release_tag}", missing_ok=True)
     if existing and not existing["draft"]:
-        required = {f"FlClash-{app_tag[1:]}-android-arm64-v8a.apk", "SHA256SUMS", "BUILD-PROVENANCE.json", "SIGNING-CERTIFICATE.txt"}
+        required = {apk_name, "SHA256SUMS", "BUILD-PROVENANCE.json", "SIGNING-CERTIFICATE.txt"}
         if {asset["name"] for asset in existing["assets"]} != required or any(asset["size"] == 0 for asset in existing["assets"]):
             raise ValueError("Published release has missing or unexpected assets; refusing to overwrite it")
         output(build="false", tag=release_tag)
@@ -194,7 +195,7 @@ def main():
         raise ValueError("Mihomo checkout does not match release provenance")
     if not (core_path / "adapter/outbound/anytls_reality_test.go").exists():
         raise ValueError("The selected core has no AnyTLS REALITY regression test")
-    output(build="true", tag=release_tag, version=app_tag[1:], version_code=provenance["version_code"],
+    output(build="true", tag=release_tag, apk_name=apk_name, version=app_tag[1:], version_code=provenance["version_code"],
            flutter_version=provenance["flutter_version"], go_version=provenance["go_version"],
            ndk_version=provenance["ndk_version"], source=str(destination))
 
