@@ -1,6 +1,6 @@
 # IFlClash
 
-本仓库发布独立 Android 应用，包名为 `com.github.aldingtondavid.flclash`，显示名为 **IFlClash**。它与官方应用共存，使用本仓库自己的固定签名，不可覆盖安装官方 APK。此前的定制版名称为 FlClash AnyTLS REALITY；本次只改显示名称，保留包名和签名，可升级此前的定制版并沿用数据。
+本仓库发布独立 Android 应用，包名为 `com.github.aldingtondavid.flclash`，显示名为 **IFlClash**。它与官方应用共存，使用本仓库自己的固定签名。此前从 FlClash AnyTLS REALITY 调整为现名称时保留了包名和签名，可升级旧定制版并沿用数据。
 
 图标、系统 VPN 提示、应用标题和关于页采用安装包中的显示名称。内部 `appName` 保留 FlClash，以保持 WebDAV 备份目录等既有行为。
 
