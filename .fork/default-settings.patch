@@ -197,3 +197,19 @@
          ),
        ),
      );
+--- a/lib/models/profile.dart
++++ b/lib/models/profile.dart
+@@ -91,10 +91,12 @@
+   factory Profile.normal({String? label, String url = ''}) {
+     final id = snowflake.id;
+     return Profile(
+       type: url.isEmpty ? ProfileType.file : ProfileType.url,
+       label: label ?? '',
+       url: url,
+       id: id,
+-      autoUpdateDuration: defaultUpdateDuration,
++      autoUpdateDuration: url.isEmpty
++          ? defaultUpdateDuration
++          : const Duration(hours: 6),
+     );
+   }

@@ -157,7 +157,7 @@ jobs:
           PY
           dart run build_runner build --delete-conflicting-outputs
           flutter analyze --no-fatal-infos
-          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart test/common/fork_defaults_test.dart test/common/migration_test.dart test/models/config_test.dart test/models/tun_test.dart test/views/general_config_test.dart test/views/theme_test.dart
+          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart test/common/fork_defaults_test.dart test/common/migration_test.dart test/models/config_test.dart test/models/profile_test.dart test/models/tun_test.dart test/views/general_config_test.dart test/views/theme_test.dart
           cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml
           trap - EXIT
           dart format lib/common/request.dart

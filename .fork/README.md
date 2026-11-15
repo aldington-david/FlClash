@@ -8,7 +8,7 @@
 
 FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit、v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层改动，以及 v0.9.2 的 `3f27ef3 → edc32bd → cd1023a → 6aeff17 → 86e5619 → c506292` 五层改动。v0.9.3 在此基础上增加 `25fb069 → 4a8e40c → 04f718e → 024245d`，合计九层，涵盖健康检查超时、节点列表更新后的重新测速和 URLTest 选择缓存修正。固定链逐项校验提交、父提交和标题，从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
 
-维护分支为 `anytls-reality`。当前修订的 Release tag 为 `应用tag-anytls-核心tag-r4`；此前公开的标签和文件保留原样。tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
+维护分支为 `anytls-reality`。当前修订的 Release tag 为 `应用tag-anytls-核心tag-r5`；此前公开的标签和文件保留原样。tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
 
 r3 对齐现有 v0.9.3 客户端的应用内更新规则：例如 `v0.9.3-anytls-v1.19.34-r3` 对应 `FlClash-0.9.3-anytls-v1.19.34-r3-android-arm64-v8a.apk`，`SHA256SUMS` 使用同一个名称。旧 r2 只含应用版本的文件名会在清单查找阶段触发“下载的更新未通过校验”；发布 r3 后，已安装的定制版 v0.9.3 可以直接重新检查并更新。APK 内部版本名仍为 `0.9.3`，包名和签名保持原值，版本码递增。
 
@@ -41,3 +41,7 @@ r4 追加已确认的新安装默认值：内核统一延迟、TCP 并发、IPv6
 v0.9.1 使用上游固定的 `cacert-2026-09-25.pem` 补充应用信任根。构建下载后校验 SHA-256 `a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505`，再把证书包纳入 APK 资产；不修改宿主机证书存储。
 
 本地已通过 v1.19.32 + FlClash v0.8.98 兼容补丁的完整 Go wrapper 测试；最终 Android CGO、Flutter 构建、APK 签名与 ABI 检查由 Actions 执行。`python .fork/prepare.py --self-test` 可执行同步脚本的最小输入检查。
+
+## r5：新订阅默认每 6 小时更新
+
+新导入的远程订阅保持自动更新开启，间隔由 24 小时改为 6 小时（编辑页显示 360 分钟）。URL、批量、扫码和深链入口共用 `Profile.normal()`；仅调整该工厂的远程分支。本地文件、无 URL 的节点配置、Custom 配置及已有订阅／完整备份恢复保持原值，订阅内 provider 的原生刷新参数保持原内容。订阅到期后沿用应用启动和运行期间的检查机制，后台触发仍受应用运行状态影响。

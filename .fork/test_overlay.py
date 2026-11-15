@@ -205,7 +205,7 @@ def replay(repository, ref):
 
 
 def replay_defaults(repository, ref):
-    paths = ["lib/models/config.dart", "lib/models/clash_config.dart", "test/models/config_test.dart",
+    paths = ["lib/models/config.dart", "lib/models/clash_config.dart", "lib/models/profile.dart", "test/models/config_test.dart",
              "test/views/general_config_test.dart", "test/views/theme_test.dart", "lib/views/theme.dart"]
     archive = subprocess.check_output(["git", "-C", str(repository), "archive", "--format=zip", ref, "--", *paths])
     with tempfile.TemporaryDirectory(prefix="flclash-defaults-") as directory:

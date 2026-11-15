@@ -18,7 +18,7 @@ from overlay import apply_default_settings, verify_default_settings
 UPSTREAM = "chen08209/FlClash"
 CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
-FORK_REVISION = 4
+FORK_REVISION = 5
 ROOT = Path(__file__).resolve().parents[1]
 V092_CORE_CHAIN = (
     ("c5062921054902b25215a6a933e72ccd714c9bfa", "feat: resolve the route a connection would take without dialing it"),
