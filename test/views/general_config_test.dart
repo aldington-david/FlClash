@@ -47,6 +47,8 @@ void main() {
   PatchClashConfig config() => container.read(patchClashConfigProvider);
 
   testWidgets('lists no override until one is added', (tester) async {
+    container.read(patchClashConfigProvider.notifier).value =
+        const PatchClashConfig(generalOverrideKeys: {});
     await pumpGeneralView(tester);
     final l = currentAppLocalizations;
 

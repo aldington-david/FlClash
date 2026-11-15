@@ -1,0 +1,199 @@
+--- a/lib/models/config.dart
++++ b/lib/models/config.dart
+@@ -351,10 +351,10 @@
+ abstract class VpnProps with _$VpnProps {
+   const factory VpnProps({
+     @Default(true) bool enable,
+-    @Default(true) bool systemProxy,
+-    @Default(false) bool ipv6,
+-    @Default(true) bool allowBypass,
+-    @Default(false) bool dnsHijacking,
++    @Default(false) bool systemProxy,
++    @Default(true) bool ipv6,
++    @Default(false) bool allowBypass,
++    @Default(true) bool dnsHijacking,
+     @Default(defaultAccessControlProps) AccessControlProps accessControlProps,
+   }) = _VpnProps;
+ 
+@@ -456,6 +456,8 @@
+   return switch (json['schemeVariant']) {
+     'monochrome' => ColorStyle.monochrome.name,
+     'tonalSpot' || 'neutral' => ColorStyle.soft.name,
++    'content' || 'fidelity' || 'vibrant' || 'expressive' ||
++    'rainbow' || 'fruitSalad' => ColorStyle.vivid.name,
+     _ => null,
+   };
+ }
+@@ -474,8 +476,8 @@
+   const factory ThemeProps({
+     int? primaryColor,
+     @Default(defaultPrimaryColors) List<int> primaryColors,
+-    @Default(ThemeMode.system) ThemeMode themeMode,
+-    @Default(ColorStyle.vivid)
++    @Default(ThemeMode.dark) ThemeMode themeMode,
++    @Default(ColorStyle.soft)
+     @JsonKey(readValue: _readColorStyle)
+     ColorStyle colorStyle,
+     @Default(false) bool pureBlack,
+--- a/lib/models/clash_config.dart
++++ b/lib/models/clash_config.dart
+@@ -1150,7 +1150,7 @@
+       name: 'congestion-controller',
+       fromJson: _congestionControllerFromJson,
+     )
+-    @Default(defaultCongestionController)
++    @Default('bbr3')
+     String congestionController,
+     @JsonKey(name: 'route-exclude-address')
+     @Default([])
+@@ -1633,7 +1633,8 @@
+     'tun-override': override.toJson(),
+     _tunOverrideKeysJsonKey: [
+       if (tun.mtu != defaultTunMtu) TunOverrideKey.mtu.path,
+-      if (tun.congestionController != defaultCongestionController)
++      if (raw['congestion-controller'] != null &&
++          tun.congestionController != defaultCongestionController)
+         TunOverrideKey.congestionController.path,
+       if (override.strictRoute) TunOverrideKey.strictRoute.path,
+       if (tun.routeAddress.isNotEmpty) TunOverrideKey.routeAddress.path,
+@@ -2138,7 +2139,7 @@
+     @Default(Mode.rule) Mode mode,
+     @Default(false) @JsonKey(name: 'allow-lan') bool allowLan,
+     @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
+-    @Default(false) bool ipv6,
++    @Default(true) bool ipv6,
+     @Default(FindProcessMode.off)
+     @JsonKey(name: 'find-process-mode', unknownEnumValue: FindProcessMode.off)
+     FindProcessMode findProcessMode,
+@@ -2184,10 +2185,15 @@
+     ExternalControllerStatus externalController,
+     @Default('') String secret,
+     @Default({}) Map<String, String> hosts,
+-    @Default(false) @JsonKey(name: 'geo-auto-update') bool geoAutoUpdate,
++    @Default(true) @JsonKey(name: 'geo-auto-update') bool geoAutoUpdate,
+     @Default(24) @JsonKey(name: 'geo-update-interval') int geoUpdateInterval,
+     @Default(defaultTestUrl) @JsonKey(name: 'test-url') String testUrl,
+-    @Default({})
++    @Default({
++      GeneralOverrideKey.unifiedDelay,
++      GeneralOverrideKey.tcpConcurrent,
++      GeneralOverrideKey.ipv6,
++      GeneralOverrideKey.geodataLoader,
++    })
+     @JsonKey(
+       name: _generalOverrideKeysJsonKey,
+       fromJson: _generalOverrideKeysFromJson,
+--- a/test/models/config_test.dart
++++ b/test/models/config_test.dart
+@@ -391,10 +391,10 @@
+     test('default values', () {
+       const props = VpnProps();
+       expect(props.enable, true);
+-      expect(props.systemProxy, true);
+-      expect(props.ipv6, false);
+-      expect(props.allowBypass, true);
+-      expect(props.dnsHijacking, false);
++      expect(props.systemProxy, false);
++      expect(props.ipv6, true);
++      expect(props.allowBypass, false);
++      expect(props.dnsHijacking, true);
+       expect(props.accessControlProps.enable, false);
+     });
+ 
+@@ -699,6 +699,7 @@
+       ...(jsonDecode(jsonEncode(defaultClashConfig)) as Map<String, Object?>)
+         ..remove('general-override-keys')
+         ..remove('test-url'),
++      'ipv6': false,
+       ...changes,
+     };
+ 
+@@ -769,12 +770,12 @@
+         findProcessMode: FindProcessMode.always,
+         mode: Mode.global,
+         logLevel: LogLevel.debug,
+-        ipv6: true,
++        ipv6: !defaultClashConfig.ipv6,
+         tcpConcurrent: false,
+         externalController: ExternalControllerStatus.open,
+         secret: 'secret',
+         unifiedDelay: false,
+-        geoAutoUpdate: true,
++        geoAutoUpdate: !defaultClashConfig.geoAutoUpdate,
+         geoUpdateInterval: 6,
+         geoXUrl: {...defaultGeoXUrl, GeoResource.MMDB: 'https://mmdb.test'},
+         testUrl: 'https://probe.test/204',
+@@ -905,14 +906,14 @@
+       const props = ThemeProps();
+       expect(props.primaryColor, null);
+       expect(props.primaryColors, defaultPrimaryColors);
+-      expect(props.themeMode, ThemeMode.system);
++      expect(props.themeMode, ThemeMode.dark);
+       expect(props.pureBlack, false);
+       expect(props.textScale.scale, 1.0);
+     });
+ 
+     test('safeFromJson returns default on null', () {
+       final result = ThemeProps.safeFromJson(null);
+-      expect(result.themeMode, ThemeMode.system);
++      expect(result.themeMode, ThemeMode.dark);
+     });
+ 
+     test('round-trip with custom values', () {
+@@ -1174,7 +1175,7 @@
+       expect(config.currentProfileId, isNull);
+       expect(config.appSettingProps.locale, isNull);
+       expect(config.appSettingProps.acceptedDisclaimerVersion, 3);
+-      expect(config.vpnProps.ipv6, false);
++      expect(config.vpnProps.ipv6, true);
+       expect(config.vpnProps.accessControlProps.enable, true);
+       expect(
+         config.vpnProps.accessControlProps.mode,
+--- a/test/views/general_config_test.dart
++++ b/test/views/general_config_test.dart
+@@ -47,6 +47,8 @@
+   PatchClashConfig config() => container.read(patchClashConfigProvider);
+ 
+   testWidgets('lists no override until one is added', (tester) async {
++    container.read(patchClashConfigProvider.notifier).value =
++        const PatchClashConfig(generalOverrideKeys: {});
+     await pumpGeneralView(tester);
+     final l = currentAppLocalizations;
+ 
+--- a/test/views/theme_test.dart
++++ b/test/views/theme_test.dart
+@@ -53,10 +53,10 @@
+   ThemeProps readTheme() => container.read(themeSettingProvider);
+ 
+   group('theme mode', () {
+-    testWidgets('defaults to following the system', (tester) async {
+-      await pumpThemeView(tester);
+-
+-      expect(readTheme().themeMode, ThemeMode.system);
++    testWidgets('defaults to dark mode', (tester) async {
++      await pumpThemeView(tester);
++
++      expect(readTheme().themeMode, ThemeMode.dark);
+     });
+ 
+     testWidgets('switches to light and back to dark', (tester) async {
+--- a/lib/views/theme.dart
++++ b/lib/views/theme.dart
+@@ -122,7 +122,7 @@
+       return state.copyWith(
+         primaryColors: defaultPrimaryColors,
+         primaryColor: defaultPrimaryColor,
+-        colorStyle: ColorStyle.vivid,
++        colorStyle: defaultThemeProps.colorStyle,
+       );
+     });
+   }
+@@ -240,7 +240,7 @@
+                 state.primaryColors,
+                 defaultPrimaryColors,
+               ) &&
+-              state.colorStyle == ColorStyle.vivid,
++              state.colorStyle == defaultThemeProps.colorStyle,
+         ),
+       ),
+     );
