@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_ui/prism_ui.dart';
 
@@ -44,7 +43,7 @@ void main() {
   });
 
   test('saved settings and deliberately empty overrides survive decoding', () {
-    final saved = Config(
+    const saved = Config(
       vpnProps: const VpnProps(
         systemProxy: true,
         allowBypass: true,
