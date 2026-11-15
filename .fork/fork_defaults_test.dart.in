@@ -44,17 +44,17 @@ void main() {
 
   test('saved settings and deliberately empty overrides survive decoding', () {
     const saved = Config(
-      vpnProps: const VpnProps(
+      vpnProps: VpnProps(
         systemProxy: true,
         allowBypass: true,
         ipv6: false,
         dnsHijacking: false,
       ),
-      themeProps: const ThemeProps(
+      themeProps: ThemeProps(
         themeMode: ThemeMode.light,
         colorStyle: ColorStyle.vivid,
       ),
-      patchClashConfig: const PatchClashConfig(
+      patchClashConfig: PatchClashConfig(
         ipv6: false,
         geoAutoUpdate: false,
         tun: Tun(congestionController: 'reno'),

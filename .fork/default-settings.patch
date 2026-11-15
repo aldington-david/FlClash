@@ -108,6 +108,21 @@
        ...changes,
      };
  
+@@ -769,12 +770,12 @@
+         findProcessMode: FindProcessMode.always,
+         mode: Mode.global,
+         logLevel: LogLevel.debug,
+-        ipv6: true,
++        ipv6: !defaultClashConfig.ipv6,
+         tcpConcurrent: false,
+         externalController: ExternalControllerStatus.open,
+         secret: 'secret',
+         unifiedDelay: false,
+-        geoAutoUpdate: true,
++        geoAutoUpdate: !defaultClashConfig.geoAutoUpdate,
+         geoUpdateInterval: 6,
+         geoXUrl: {...defaultGeoXUrl, GeoResource.MMDB: 'https://mmdb.test'},
+         testUrl: 'https://probe.test/204',
 @@ -905,14 +906,14 @@
        const props = ThemeProps();
        expect(props.primaryColor, null);
@@ -162,3 +177,23 @@
      });
  
      testWidgets('switches to light and back to dark', (tester) async {
+--- a/lib/views/theme.dart
++++ b/lib/views/theme.dart
+@@ -122,7 +122,7 @@
+       return state.copyWith(
+         primaryColors: defaultPrimaryColors,
+         primaryColor: defaultPrimaryColor,
+-        colorStyle: ColorStyle.vivid,
++        colorStyle: defaultThemeProps.colorStyle,
+       );
+     });
+   }
+@@ -240,7 +240,7 @@
+                 state.primaryColors,
+                 defaultPrimaryColors,
+               ) &&
+-              state.colorStyle == ColorStyle.vivid,
++              state.colorStyle == defaultThemeProps.colorStyle,
+         ),
+       ),
+     );
