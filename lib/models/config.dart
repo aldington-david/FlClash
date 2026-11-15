@@ -351,10 +351,10 @@ extension WindowPropsExt on WindowProps {
 abstract class VpnProps with _$VpnProps {
   const factory VpnProps({
     @Default(true) bool enable,
-    @Default(true) bool systemProxy,
-    @Default(false) bool ipv6,
-    @Default(true) bool allowBypass,
-    @Default(false) bool dnsHijacking,
+    @Default(false) bool systemProxy,
+    @Default(true) bool ipv6,
+    @Default(false) bool allowBypass,
+    @Default(true) bool dnsHijacking,
     @Default(defaultAccessControlProps) AccessControlProps accessControlProps,
   }) = _VpnProps;
 
@@ -456,6 +456,8 @@ Object? _readColorStyle(Map<dynamic, dynamic> json, String key) {
   return switch (json['schemeVariant']) {
     'monochrome' => ColorStyle.monochrome.name,
     'tonalSpot' || 'neutral' => ColorStyle.soft.name,
+    'content' || 'fidelity' || 'vibrant' || 'expressive' ||
+    'rainbow' || 'fruitSalad' => ColorStyle.vivid.name,
     _ => null,
   };
 }
@@ -474,8 +476,8 @@ abstract class ThemeProps with _$ThemeProps {
   const factory ThemeProps({
     int? primaryColor,
     @Default(defaultPrimaryColors) List<int> primaryColors,
-    @Default(ThemeMode.system) ThemeMode themeMode,
-    @Default(ColorStyle.vivid)
+    @Default(ThemeMode.dark) ThemeMode themeMode,
+    @Default(ColorStyle.soft)
     @JsonKey(readValue: _readColorStyle)
     ColorStyle colorStyle,
     @Default(false) bool pureBlack,

@@ -391,10 +391,10 @@ void main() {
     test('default values', () {
       const props = VpnProps();
       expect(props.enable, true);
-      expect(props.systemProxy, true);
-      expect(props.ipv6, false);
-      expect(props.allowBypass, true);
-      expect(props.dnsHijacking, false);
+      expect(props.systemProxy, false);
+      expect(props.ipv6, true);
+      expect(props.allowBypass, false);
+      expect(props.dnsHijacking, true);
       expect(props.accessControlProps.enable, false);
     });
 
@@ -699,6 +699,7 @@ void main() {
       ...(jsonDecode(jsonEncode(defaultClashConfig)) as Map<String, Object?>)
         ..remove('general-override-keys')
         ..remove('test-url'),
+      'ipv6': false,
       ...changes,
     };
 
@@ -769,12 +770,12 @@ void main() {
         findProcessMode: FindProcessMode.always,
         mode: Mode.global,
         logLevel: LogLevel.debug,
-        ipv6: true,
+        ipv6: !defaultClashConfig.ipv6,
         tcpConcurrent: false,
         externalController: ExternalControllerStatus.open,
         secret: 'secret',
         unifiedDelay: false,
-        geoAutoUpdate: true,
+        geoAutoUpdate: !defaultClashConfig.geoAutoUpdate,
         geoUpdateInterval: 6,
         geoXUrl: {...defaultGeoXUrl, GeoResource.MMDB: 'https://mmdb.test'},
         testUrl: 'https://probe.test/204',
@@ -905,14 +906,14 @@ void main() {
       const props = ThemeProps();
       expect(props.primaryColor, null);
       expect(props.primaryColors, defaultPrimaryColors);
-      expect(props.themeMode, ThemeMode.system);
+      expect(props.themeMode, ThemeMode.dark);
       expect(props.pureBlack, false);
       expect(props.textScale.scale, 1.0);
     });
 
     test('safeFromJson returns default on null', () {
       final result = ThemeProps.safeFromJson(null);
-      expect(result.themeMode, ThemeMode.system);
+      expect(result.themeMode, ThemeMode.dark);
     });
 
     test('round-trip with custom values', () {
@@ -1174,7 +1175,7 @@ void main() {
       expect(config.currentProfileId, isNull);
       expect(config.appSettingProps.locale, isNull);
       expect(config.appSettingProps.acceptedDisclaimerVersion, 3);
-      expect(config.vpnProps.ipv6, false);
+      expect(config.vpnProps.ipv6, true);
       expect(config.vpnProps.accessControlProps.enable, true);
       expect(
         config.vpnProps.accessControlProps.mode,
