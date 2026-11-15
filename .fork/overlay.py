@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 CORE_URL = "https://github.com/aldington-david/mihomo"
-OVERLAY_FILES = ("app.patch", "firebase-runtime.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in")
+OVERLAY_FILES = ("app.patch", "firebase-runtime.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in", "default-settings.patch", "fork_defaults_test.dart.in")
 UPDATE_CHECK = r"""final body = RELEASE['body'] as String?;
 int? remoteBuild;
 if (body == null || body.isEmpty) {
@@ -113,6 +113,24 @@ def verify(source):
                 raise ValueError(f"Firebase executable reference remains at {name}:{number}: {line.strip()}")
 
 
+def verify_default_settings(source):
+    subprocess.run(["git", "apply", "--reverse", "--check", str(HERE / "default-settings.patch")],
+                   cwd=source, check=True, capture_output=True)
+
+
+def apply_default_settings(source):
+    source = Path(source)
+    patch = HERE / "default-settings.patch"
+    subprocess.run(["git", "apply", "--check", str(patch)], cwd=source, check=True)
+    subprocess.run(["git", "apply", str(patch)], cwd=source, check=True)
+    target = source / "test/common/fork_defaults_test.dart"
+    if target.exists():
+        raise ValueError("Upstream already defines the fork defaults test")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text((HERE / "fork_defaults_test.dart.in").read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    verify_default_settings(source)
+
+
 def apply(source):
     source = Path(source)
     patches = [HERE / "app.patch"]
@@ -162,4 +180,4 @@ def apply(source):
 
 
 if __name__ == "__main__":
-    {"apply": apply, "verify": verify}[sys.argv[1]](sys.argv[2])
+    {"apply": apply, "verify": verify, "verify-defaults": verify_default_settings}[sys.argv[1]](sys.argv[2])

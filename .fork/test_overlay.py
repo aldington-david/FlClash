@@ -9,6 +9,7 @@ from unittest.mock import patch
 import zipfile
 
 from overlay import apply, replace_literal, replace_update_check, verify
+from overlay import apply_default_settings, verify_default_settings
 from check_firebase_runtime import verify as verify_runtime
 from prepare import compatibility_base
 
@@ -203,13 +204,46 @@ def replay(repository, ref):
         print(ref + ": full overlay, update-code guard, five Firebase rejection cases and partial-removal rejection passed")
 
 
+def replay_defaults(repository, ref):
+    paths = ["lib/models/config.dart", "lib/models/clash_config.dart", "test/models/config_test.dart",
+             "test/views/general_config_test.dart", "test/views/theme_test.dart"]
+    archive = subprocess.check_output(["git", "-C", str(repository), "archive", "--format=zip", ref, "--", *paths])
+    with tempfile.TemporaryDirectory(prefix="flclash-defaults-") as directory:
+        source = Path(directory)
+        with zipfile.ZipFile(io.BytesIO(archive)) as files:
+            files.extractall(source)
+        subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+        try:
+            verify_default_settings(source)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError("Accepted upstream defaults before customization")
+        apply_default_settings(source)
+        verify_default_settings(source)
+        config = source / "lib/models/config.dart"
+        text = config.read_text(encoding="utf-8")
+        config.write_text(text.replace("@Default(false) bool systemProxy,\n    @Default(true) bool ipv6,",
+                                       "@Default(true) bool systemProxy,\n    @Default(true) bool ipv6,"), encoding="utf-8")
+        try:
+            verify_default_settings(source)
+        except subprocess.CalledProcessError:
+            pass
+        else:
+            raise AssertionError("Accepted a changed VPN default")
+        print(ref + ": approved defaults applied; original defaults and changed values rejected")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--ref", action="append", default=[])
+    parser.add_argument("--defaults", action="store_true")
     args = parser.parse_args()
     suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
     if not unittest.TextTestRunner().run(suite).wasSuccessful():
         raise SystemExit(1)
     for ref in args.ref:
         replay(args.repository, ref)
+        if args.defaults:
+            replay_defaults(args.repository, ref)

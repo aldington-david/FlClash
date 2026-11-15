@@ -13,11 +13,12 @@ import tempfile
 import time
 
 from overlay import apply as apply_overlay, fingerprint as overlay_fingerprint, verify as verify_overlay
+from overlay import apply_default_settings, verify_default_settings
 
 UPSTREAM = "chen08209/FlClash"
 CORE = "aldington-david/mihomo"
 REPO = "aldington-david/FlClash"
-FORK_REVISION = 3
+FORK_REVISION = 4
 ROOT = Path(__file__).resolve().parents[1]
 V092_CORE_CHAIN = (
     ("c5062921054902b25215a6a933e72ccd714c9bfa", "feat: resolve the route a connection would take without dialing it"),
@@ -135,6 +136,7 @@ def main():
         if provenance.get("overlay_sha256") != overlay_fingerprint():
             raise ValueError("Unpublished source tag uses a different overlay; back it up and recreate it before retrying")
         verify_overlay(destination)
+        verify_default_settings(destination)
     else:
         app_sha = run("git", "rev-parse", "HEAD", cwd=destination)
         upstream_core_sha = run("git", "ls-tree", "HEAD", "core/Clash.Meta", cwd=destination).split()[2]
@@ -151,6 +153,7 @@ def main():
                 file.unlink()
         shutil.copy2(ROOT / ".github/workflows/anytls-release.yml", destination / ".github/workflows/anytls-release.yml")
         apply_overlay(destination)
+        apply_default_settings(destination)
         if core_path.exists():
             core_path.rmdir()  # git creates an empty directory for an uninitialized submodule.
         run("git", "clone", "--depth", "1", "--branch", core_tag, f"https://github.com/{CORE}.git", str(core_path))

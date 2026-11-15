@@ -42,7 +42,7 @@ jobs:
         if: steps.prepare.outputs.build == 'true'
         run: |
           app_sha="$(python3 -c 'import json,os; from pathlib import Path; print(json.loads((Path(os.environ["RELEASE_SOURCE"])/".fork/provenance.json").read_text())["app_sha"])')"
-          python3 .fork/test_overlay.py --repository "$RELEASE_SOURCE" --ref "$app_sha"
+          python3 .fork/test_overlay.py --repository "$RELEASE_SOURCE" --ref "$app_sha" --defaults
 
       - name: Fetch the pinned CA bundle for the core and Flutter
         if: steps.prepare.outputs.build == 'true'
@@ -146,7 +146,6 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
-          flutter analyze --no-fatal-infos
           cp pubspec.yaml "$RUNNER_TEMP/flclash-test-pubspec.yaml"
           trap 'cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml' EXIT
           python3 - <<'PY'
@@ -156,7 +155,9 @@ jobs:
           assert text.count('build_assets: true') == 2, 'Native hook configuration changed'
           path.write_text(text.replace('build_assets: true', 'build_assets: false'))
           PY
-          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart
+          dart run build_runner build --delete-conflicting-outputs
+          flutter analyze --no-fatal-infos
+          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart test/common/fork_defaults_test.dart test/common/migration_test.dart test/models/config_test.dart test/models/tun_test.dart test/views/general_config_test.dart test/views/theme_test.dart
           cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml
           trap - EXIT
           dart format lib/common/request.dart
@@ -168,6 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 "$GITHUB_WORKSPACE/.fork/overlay.py" verify .
+          python3 "$GITHUB_WORKSPACE/.fork/overlay.py" verify-defaults .
           report="$RUNNER_TEMP/flclash-signing-diagnostics/firebase-runtime.txt"
           (cd android && ./gradlew --console=plain :app:dependencies --configuration releaseRuntimeClasspath) > "$report"
           python3 "$GITHUB_WORKSPACE/.fork/check_firebase_runtime.py" "$report"
