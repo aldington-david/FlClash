@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
 CORE_URL = "https://github.com/aldington-david/mihomo"
-OVERLAY_FILES = ("app.patch", "firebase-runtime.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in", "default-settings.patch", "fork_defaults_test.dart.in")
+OVERLAY_FILES = ("app.patch", "firebase-runtime.patch", "firebase-native-symbols.patch", "overlay.py", "fork_update_test.dart.in", "default-settings.patch", "fork_defaults_test.dart.in", "release-asset.patch", "fork_release_asset_test.dart.in")
 UPDATE_CHECK = r"""final body = RELEASE['body'] as String?;
 int? remoteBuild;
 if (body == null || body.isEmpty) {
@@ -100,6 +100,9 @@ def verify(source):
     properties = (source / "android/gradle.properties").read_text(encoding="utf-8")
     if properties.splitlines().count("force-version-code-ignoring-abi=true") != 1:
         raise ValueError("Android versionCode must not include an ABI offset")
+    if (source / "lib/common/release_asset.dart").exists():
+        subprocess.run(["git", "apply", "--reverse", "--check", str(HERE / "release-asset.patch")],
+                       cwd=source, check=True, capture_output=True)
     tracked = subprocess.check_output(["git", "ls-files", "-z", "--", "android"], cwd=source).decode().split("\0")
     for name in filter(None, tracked):
         if name.endswith((".gradle", ".gradle.kts")):
@@ -134,6 +137,8 @@ def apply_default_settings(source):
 def apply(source):
     source = Path(source)
     patches = [HERE / "app.patch"]
+    if (source / "lib/common/release_asset.dart").exists():
+        patches.append(HERE / "release-asset.patch")
     state = (source / "android/common/src/main/java/com/follow/clash/common/GlobalState.kt").read_text(encoding="utf-8")
     if "import com.google.firebase.FirebaseApp" in state:
         patches.append(HERE / "firebase-runtime.patch")
@@ -154,6 +159,12 @@ def apply(source):
         raise ValueError("Upstream already defines the fork update test")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(tests, encoding="utf-8", newline="\n")
+    if (source / "lib/common/release_asset.dart").exists():
+        target = source / "test/common/fork_release_asset_test.dart"
+        if target.exists():
+            raise ValueError("Upstream already defines the fork release asset test")
+        target.write_text((HERE / "fork_release_asset_test.dart.in").read_text(encoding="utf-8"),
+                          encoding="utf-8", newline="\n")
     replacements = {
         "lib/application.dart": [("title: appName,", "title: globalState.packageInfo.appName,", False)],
         "lib/common/constant.dart": [("'chen08209/FlClash'", "'aldington-david/FlClash'", False)],

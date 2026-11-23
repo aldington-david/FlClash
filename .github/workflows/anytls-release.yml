@@ -143,6 +143,7 @@ jobs:
         working-directory: _release
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           flutter pub get
@@ -157,11 +158,11 @@ jobs:
           PY
           dart run build_runner build --delete-conflicting-outputs
           flutter analyze --no-fatal-infos
-          flutter test --reporter expanded test/setup_test.dart test/common/request_test.dart test/common/fork_update_test.dart test/common/fork_defaults_test.dart test/common/migration_test.dart test/models/config_test.dart test/models/profile_test.dart test/models/tun_test.dart test/views/general_config_test.dart test/views/theme_test.dart
+          flutter test --reporter expanded test/tool/package_test.dart test/common/request_test.dart test/common/app_update_test.dart test/common/release_asset_test.dart test/common/fork_release_asset_test.dart test/common/fork_update_test.dart test/common/fork_defaults_test.dart test/common/migration_test.dart test/models/config_test.dart test/models/profile_test.dart test/models/tun_test.dart test/views/general_config_test.dart test/views/theme_test.dart
           cp "$RUNNER_TEMP/flclash-test-pubspec.yaml" pubspec.yaml
           trap - EXIT
           dart format lib/common/request.dart
-          dart setup.dart android --arch arm64 --env stable -v
+          dart tool/package.dart android --arch arm64 --env stable --tag "$RELEASE_TAG" -v
 
       - name: Verify Firebase telemetry is absent from the release runtime
         if: steps.prepare.outputs.build == 'true'
@@ -185,10 +186,7 @@ jobs:
           EXPECTED_CERTIFICATE_SHA256: ${{ vars.ANDROID_CERTIFICATE_SHA256 }}
         run: |
           set -euo pipefail
-          built_apk="dist/FlClash-${APP_VERSION}-android-arm64-v8a.apk"
-          test -s "$built_apk"
           apk="dist/$APK_NAME"
-          mv "$built_apk" "$apk"
           test -s "$apk"
           test "$(find dist -name '*.apk' | wc -l)" -eq 1
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"

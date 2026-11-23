@@ -34,6 +34,19 @@ V093_CORE_CHAIN = (
     ("4a8e40cf4dcbd92b0998d309a421aaf94f27ddae", "fix: test the proxies a provider update swaps in during a health check"),
     ("25fb06997dd5245236a3301b0bad4852a3991a48", "feat: wait the host's delay test timeout in a health check that names none"),
 ) + V092_CORE_CHAIN
+V094_CORE_CHAIN = (
+    ("5b453f80dbcee6b3ecfb0415bcace24a48c88707", "feat: reopen an outbound's shared connection when the host changes network"),
+    ("ae535706cdf85907eb3962858b9b7f11f1e012fa", "fix: hold an unusable url-test pick for a second"),
+    ("f13703314eb6b5b02872a3c9fc65f2d257b9ae15", "fix: leave an unmeasured url-test pick once a member is measured"),
+    ("3fd3c2ea425364d6ab2397a901adf5ed54e3fd5d", "fix: test the proxies a provider update swaps in during a health check"),
+    ("d0565d684b02a5ca8c1a8dbf6fe5f8df07d83cb3", "feat: wait the host's delay test timeout in a health check that names none"),
+    ("88ea8a072b72cd16aac2e53d41afa0534e52e83a", "feat: resolve the route a connection would take without dialing it"),
+    ("2205e13a98ec03b3420cc92192f91236b9922692", "feat: find the mapping a proxy provider builds a proxy from"),
+    ("9939e722eba40c21517734132ab0d30871408973", "feat: clear every DNS answer and client state on request"),
+    ("6b706dc130c1cf21323d3ca27e628adae15e8025", "feat: list use providers among a group's proxies by use-position"),
+    ("8dcfec767d84431cd2dad88b99ef3b1cd450547e", "feat: support FlClash"),
+    ("0455d0d28c4526937380505153e65a843d8612e8", ""),
+)
 
 
 def run(*args, cwd=None, env=None, strip=True):
@@ -87,7 +100,7 @@ def compatibility_base(directory, revision):
         baseline = compatibility_base(directory, parents[1])
         if baseline == "88dcbf7f1614a67c3b36b848ee3592dfa92ada36":
             return baseline
-    for chain in (V092_CORE_CHAIN, V093_CORE_CHAIN):
+    for chain in (V092_CORE_CHAIN, V093_CORE_CHAIN, V094_CORE_CHAIN):
         if revision == chain[0][0]:
             expected = [f"{child}\0{parent}\0{title}"
                         for (child, title), (parent, _) in zip(chain, chain[1:])]
@@ -160,7 +173,7 @@ def main():
         core_sha = run("git", "rev-parse", "HEAD", cwd=core_path)
         with tempfile.TemporaryDirectory(prefix="flclash-compat-", dir=destination.parent) as directory:
             run("git", "init", directory)
-            run("git", "fetch", "--depth", "10", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
+            run("git", "fetch", "--depth", "11", "https://github.com/chen08209/Clash.Meta.git", upstream_core_sha, cwd=directory)
             compatibility_base_sha = compatibility_base(directory, upstream_core_sha)
             compatibility = run("git", "diff", "--binary", compatibility_base_sha, upstream_core_sha, cwd=directory, strip=False)
         (destination / ".fork/flclash-compat.patch").write_text(compatibility, encoding="utf-8", newline="\n")

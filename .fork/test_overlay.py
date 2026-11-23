@@ -66,7 +66,7 @@ class UpdateCheckTest(unittest.TestCase):
 
 
 class CompatibilityBaseTest(unittest.TestCase):
-    def test_v092_and_v093_require_the_complete_reviewed_commit_chain(self):
+    def test_reviewed_versions_require_the_complete_commit_chain(self):
         rows = [
             ("c5062921054902b25215a6a933e72ccd714c9bfa", "86e56192ddd815e2094212531c48a364eb35659d", "feat: resolve the route a connection would take without dialing it"),
             ("86e56192ddd815e2094212531c48a364eb35659d", "6aeff178349cbbc89f1729d717a4eb8eba64a198", "feat: find the mapping a proxy provider builds a proxy from"),
@@ -80,6 +80,18 @@ class CompatibilityBaseTest(unittest.TestCase):
             ("4a8e40cf4dcbd92b0998d309a421aaf94f27ddae", "25fb06997dd5245236a3301b0bad4852a3991a48", "fix: test the proxies a provider update swaps in during a health check"),
             ("25fb06997dd5245236a3301b0bad4852a3991a48", "c5062921054902b25215a6a933e72ccd714c9bfa", "feat: wait the host's delay test timeout in a health check that names none"),
         ] + rows
+        v094_rows = [
+            ("5b453f80dbcee6b3ecfb0415bcace24a48c88707", "ae535706cdf85907eb3962858b9b7f11f1e012fa", "feat: reopen an outbound's shared connection when the host changes network"),
+            ("ae535706cdf85907eb3962858b9b7f11f1e012fa", "f13703314eb6b5b02872a3c9fc65f2d257b9ae15", "fix: hold an unusable url-test pick for a second"),
+            ("f13703314eb6b5b02872a3c9fc65f2d257b9ae15", "3fd3c2ea425364d6ab2397a901adf5ed54e3fd5d", "fix: leave an unmeasured url-test pick once a member is measured"),
+            ("3fd3c2ea425364d6ab2397a901adf5ed54e3fd5d", "d0565d684b02a5ca8c1a8dbf6fe5f8df07d83cb3", "fix: test the proxies a provider update swaps in during a health check"),
+            ("d0565d684b02a5ca8c1a8dbf6fe5f8df07d83cb3", "88ea8a072b72cd16aac2e53d41afa0534e52e83a", "feat: wait the host's delay test timeout in a health check that names none"),
+            ("88ea8a072b72cd16aac2e53d41afa0534e52e83a", "2205e13a98ec03b3420cc92192f91236b9922692", "feat: resolve the route a connection would take without dialing it"),
+            ("2205e13a98ec03b3420cc92192f91236b9922692", "9939e722eba40c21517734132ab0d30871408973", "feat: find the mapping a proxy provider builds a proxy from"),
+            ("9939e722eba40c21517734132ab0d30871408973", "6b706dc130c1cf21323d3ca27e628adae15e8025", "feat: clear every DNS answer and client state on request"),
+            ("6b706dc130c1cf21323d3ca27e628adae15e8025", "8dcfec767d84431cd2dad88b99ef3b1cd450547e", "feat: list use providers among a group's proxies by use-position"),
+            ("8dcfec767d84431cd2dad88b99ef3b1cd450547e", "0455d0d28c4526937380505153e65a843d8612e8", "feat: support FlClash"),
+        ]
 
         def git(*args, **kwargs):
             if args[1] == "log":
@@ -89,7 +101,7 @@ class CompatibilityBaseTest(unittest.TestCase):
             return expected[0][2]
 
         with patch("prepare.run", side_effect=git):
-            for expected in (rows, v093_rows):
+            for expected in (rows, v093_rows, v094_rows):
                 actual = list(expected)
                 self.assertEqual(compatibility_base("unused", expected[0][0]), expected[-1][1])
                 with self.assertRaises(ValueError):
@@ -133,7 +145,7 @@ class CompatibilityBaseTest(unittest.TestCase):
 
 
 def replay(repository, ref):
-    paths = ["android", "lib/application.dart", "lib/common/constant.dart", "lib/common/request.dart", "lib/views/about.dart", "test/common"]
+    paths = ["android", "lib/application.dart", "lib/common", "lib/views/about.dart", "test/common"]
     archive = subprocess.check_output(["git", "-c", "core.autocrlf=false", "-C", str(repository),
                                        "archive", "--format=zip", ref, "--", *paths])
     with tempfile.TemporaryDirectory(prefix="flclash-overlay-") as directory:
@@ -142,8 +154,11 @@ def replay(repository, ref):
             files.extractall(source)
         subprocess.run(["git", "init", "--quiet", str(source)], check=True)
         subprocess.run(["git", "-C", str(source), "add", "."], check=True, capture_output=True)
+        properties = source / "android/gradle.properties"
+        upstream_properties = properties.read_text(encoding="utf-8")
         apply(source)
         verify(source)
+        assert properties.read_text(encoding="utf-8").replace("force-version-code-ignoring-abi=true\n", "") == upstream_properties
         request = source / "lib/common/request.dart"
         clean_request = request.read_text(encoding="utf-8")
         mode = "true" if "Future<Map<String, dynamic>> latestRelease() async {" in clean_request else "false"
@@ -179,6 +194,7 @@ def replay(repository, ref):
             raise AssertionError("Accepted a new native Firebase import")
         subprocess.run(["git", "-C", str(source), "restore", "."], check=True)
         (source / "test/common/fork_update_test.dart").unlink()
+        (source / "test/common/fork_release_asset_test.dart").unlink(missing_ok=True)
         if "import com.google.firebase.FirebaseApp" in native.read_text(encoding="utf-8"):
             common = source / "android/common/build.gradle.kts"
             before = common.read_text(encoding="utf-8")

@@ -8,15 +8,19 @@
 
 FlClash 需要自有 Go API，因此在本仓库用户版 mihomo 正式 tag 上叠加该 FlClash 版本原有的兼容补丁。补丁来自上游对应 submodule commit，而不是取未固定的分支。支持旧版单个 `feat: support FlClash` commit、v0.9.0 已审查的 `88dcbf7 → 86a42fd → 8380d0e` 两层改动，以及 v0.9.2 的 `3f27ef3 → edc32bd → cd1023a → 6aeff17 → 86e5619 → c506292` 五层改动。v0.9.3 在此基础上增加 `25fb069 → 4a8e40c → 04f718e → 024245d`，合计九层，涵盖健康检查超时、节点列表更新后的重新测速和 URLTest 选择缓存修正。固定链逐项校验提交、父提交和标题，从稳定基线到 tip 导出完整差异，并记录 `compatibility_base_sha`。未知提交链、补丁冲突、Go 测试或 Android 构建失败都会停止发布，需审查适配。
 
+v0.9.4 使用从 `0455d0d` 到 `5b453f8` 的十层固定兼容链。前九层与 v0.9.3 内容一致，新增网络切换后重建 WireGuard、Hysteria2 和 TUIC 共享连接的接口；同样逐项验证 SHA、父提交和标题。Android 打包入口为 `tool/package.dart`，使用完整 fork tag，内部版本名和版本码仍取自固定的 `pubspec.yaml`。
+
 维护分支为 `anytls-reality`。当前修订的 Release tag 为 `应用tag-anytls-核心tag-r5`；此前公开的标签和文件保留原样。tag 保存完整应用源码、核心 gitlink、兼容 patch 及 `.fork/provenance.json`。失败的构建可以重新运行，继续使用同一源码 tag。正式 Release 只在签名、包名、显示名称、ABI 检查通过并上传完全部文件后公开。Android versionCode 使用 `1000000000 + 首次准备该版本的 Actions run_number`，同一应用版本也能接收核心或命名更新。
 
 r3 对齐现有 v0.9.3 客户端的应用内更新规则：例如 `v0.9.3-anytls-v1.19.34-r3` 对应 `FlClash-0.9.3-anytls-v1.19.34-r3-android-arm64-v8a.apk`，`SHA256SUMS` 使用同一个名称。旧 r2 只含应用版本的文件名会在清单查找阶段触发“下载的更新未通过校验”；发布 r3 后，已安装的定制版 v0.9.3 可以直接重新检查并更新。APK 内部版本名仍为 `0.9.3`，包名和签名保持原值，版本码递增。
 
-发布前的 `check_update_asset.py` 直接执行该发布源码中的 `releaseAssetName`、`releaseAssetUri` 和 `releaseChecksum`，确认客户端请求名称、清单条目和实际 APK SHA-256 一致。检查在上传公开文件前执行，覆盖同一应用版本的核心升级场景。
+发布前的 `check_update_asset.py` 直接执行该发布源码中的更新命名、下载地址和校验和解析函数，确认客户端请求的 APK 与校验清单名称、清单条目和实际 APK SHA-256 一致。v0.9.3 使用原有 `releaseAssetName`，v0.9.4 使用 `updateAssetName`、`updateChecksumsName` 及其共享的 `release_asset.dart`。检查在上传公开文件前执行，覆盖同一应用版本的核心升级场景。
+
+v0.9.4 的打包工具与客户端共用文件命名函数。`release-asset.patch` 仅为精确的 `应用版本-anytls-v核心版本-r修订号` 格式保留本 fork 的 Android arm64 APK 名和 `SHA256SUMS`；原有上游标签继续采用上游命名。新发布因此仍提供同一组四个资产，已安装 v0.9.3 与新客户端使用相同的更新地址和校验清单。新增命名回归覆盖应用内更新、打包函数、核心与修订升级、非法标签和校验条目。
 
 r4 追加已确认的新安装默认值：内核统一延迟、TCP 并发、IPv6 和 Geo 低内存模式启用全局覆写；VPN 系统代理和应用绕过关闭，VPN IPv6 与 DNS 劫持开启，网络 TCP 拥塞控制采用 `bbr3`；主题为深色／柔和，资源自动更新开启。已有明确设置和覆写集合继续沿用，局域网代理关闭、自动运行关闭、最近任务隐藏关闭、通知栏停止按钮开启、自动检查更新开启的原默认值保留。
 
-默认值以独立的 `default-settings.patch` 严格应用到当前上游模型，由 CI 的 build_runner 重新生成模型，再运行新建、缺省字段、存量设置与历史迁移回归。既有基础 overlay 的旧版回放入口保持原样；当前模型的额外回放使用 `test_overlay.py --defaults --repository <上游checkout> --ref v0.9.3`。手工构建此修订时，按 workflow 执行模型生成和回归后再打包。
+默认值以独立的 `default-settings.patch` 严格应用到当前上游模型，由 CI 的 build_runner 重新生成模型，再运行新建、缺省字段、存量设置与历史迁移回归。既有基础 overlay 的旧版回放入口保持原样；当前模型的额外回放使用 `test_overlay.py --defaults --repository <上游checkout> --ref v0.9.4`。v0.9.4 上游已开启资源自动更新，直接保留该值；其余已批准默认值和六小时远程订阅规则继续由补丁与回归验证。手工构建此修订时，按 workflow 执行模型生成和回归后再打包。
 
 手工复现须检出某个发布 tag，执行 `git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --depth 1`，然后执行 `git -C core/Clash.Meta apply ../../.fork/flclash-compat.patch`，再按对应 workflow 的 Go/Flutter/NDK 版本构建。首次构建和重跑均按发布源码的 gitlink 初始化核心与 UI 子模块，包括 v0.9.3 新增的 `plugins/prism_ui`；命令级 HTTPS 替换支持匿名读取 GitHub 公共仓库，不修改全局 Git 配置，也不跟踪子模块分支的新提交。维护分支保存自动化和改动模板，不能直接视作已经集成对应核心的发布源码。
 
@@ -24,7 +28,7 @@ r4 追加已确认的新安装默认值：内核统一延迟、TCP 并发、IPv6
 
 另需仓库变量 `ANDROID_CERTIFICATE_SHA256`，其值为签名证书 SHA-256 的 64 位十六进制串。发布前比较实际 APK 的签名证书指纹，变量为空或不一致时停止发布。
 
-`android/gradle.properties` 使用 Flutter 的 `force-version-code-ignoring-abi=true`，关闭拆分 APK 时默认增加的 ABI 编号偏移，使已安装应用与 Release 正文使用同一个 versionCode。`BUILD-PROVENANCE.json` 同时记录实际源码提交、执行 workflow 的提交及 Actions run URL。这里只固定源码与构建参数，不承诺重新打包后的字节完全一致。
+`android/gradle.properties` 使用 Flutter 的 `force-version-code-ignoring-abi=true`，关闭拆分 APK 时默认增加的 ABI 编号偏移，使已安装应用与 Release 正文使用同一个 versionCode。该开关按稳定配置行定位，保留上游的 Kotlin 和 Android DSL 设置。`BUILD-PROVENANCE.json` 同时记录实际源码提交、执行 workflow 的提交及 Actions run URL。这里只固定源码与构建参数，不承诺重新打包后的字节完全一致。
 
 此独立版本移除了 Firebase 构建插件和 Android 统计依赖，不需要上游的 `SERVICE_JSON`。更新检查指向本仓库，通过 Release 正文中 `Android version code:` 的数值识别包括核心更新在内的新构建。v0.9.0 的 API 限流回退仍保留；如果只取得标签、没有正文，就读取本仓库该标签的 `BUILD-PROVENANCE.json`，验证 `version_code` 是有效整数后比较。不会按标签语义版本比较，也不会采用响应中任意 `browser_download_url`。
 
@@ -34,7 +38,7 @@ r4 追加已确认的新安装默认值：内核统一延迟、TCP 并发、IPv6
 
 `.fork/provenance.json` 记录定制文件的规范化文本指纹 `overlay_sha256`。未发布标签若由旧版定制生成，重跑会明确拒绝复用；需先备份并重建该未发布标签。已公开 Release 只检查资产完整性，不因定制更新而重写；上传前也会再次检查仍为草稿。结构性上游改动仍可能需要人工适配，流程不会模糊匹配或忽略补丁错误。
 
-取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0 --ref v0.9.1 --ref v0.9.2 --ref v0.9.3` 可回放六版真实源码，并检查未知更新结构、错误内核提交链、新增 Firebase 入口及半删除状态会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。核心检查包含 AnyTLS REALITY、provider、outboundgroup 和 singledo 回归测试。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
+取得上游标签后，`python .fork/test_overlay.py --ref v0.8.98 --ref v0.8.99 --ref v0.9.0 --ref v0.9.1 --ref v0.9.2 --ref v0.9.3 --ref v0.9.4` 可回放七版真实源码，并检查未知更新结构、错误内核提交链、新增 Firebase 入口及半删除状态会被拒绝；也可用 `--repository` 指向独立上游 checkout。Windows 运行时将 `TEMP`、`TMP` 指向工作区内的临时目录。生成源码包含公共 `Request.checkForUpdate()` 的 Flutter 回归测试，覆盖正文、固定来源元数据、非法版本码和新版 302 回退。核心检查包含 AnyTLS REALITY、provider、outboundgroup 和 singledo 回归测试。旧版保留 CGO shared-library 编译检查；v0.9.0 对 `core/mobile` 与 `core/cmd` 运行上游对应的检查，再由完整 APK 构建实际生成 gomobile AAR。
 
 维护 checkout 超过 30 天无提交时，计划任务创建一次空提交，保持公开仓库的计划任务活跃。不会把上游开发分支当正式发布源。升级所需 Flutter、Go、NDK 版本读取自对应上游正式 tag 的 workflow。
 
