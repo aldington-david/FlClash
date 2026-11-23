@@ -1,0 +1,204 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:fl_clash/common/request.dart';
+import 'package:fl_clash/state.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+const hasReleaseRedirect = false;
+const _api =
+    'https://api.github.com/repos/aldington-david/FlClash/releases/latest';
+const _page = 'https://github.com/aldington-david/FlClash/releases/latest';
+const _tag = 'v0.9.0-anytls-v1.19.33-r2';
+const _metadata =
+    'https://github.com/aldington-david/FlClash/releases/download/$_tag/BUILD-PROVENANCE.json';
+
+class _ReleaseAdapter implements HttpClientAdapter {
+  _ReleaseAdapter(this.responses);
+
+  final Map<String, ResponseBody> responses;
+  final urls = <String>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final url = options.uri.toString();
+    urls.add(url);
+    return responses[url] ?? (throw StateError('Unexpected request: $url'));
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+ResponseBody _json(
+  Object? value, {
+  String contentType = Headers.jsonContentType,
+}) => ResponseBody.fromString(
+  jsonEncode(value),
+  200,
+  headers: {
+    Headers.contentTypeHeader: [contentType],
+  },
+);
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    globalState.packageInfo = PackageInfo(
+      appName: 'IFlClash',
+      packageName: 'com.github.aldingtondavid.flclash',
+      version: '0.9.0',
+      buildNumber: '1000000020',
+    );
+  });
+
+  Request answering(_ReleaseAdapter adapter) {
+    final request = Request()..dio.httpClientAdapter = adapter;
+    addTearDown(() => request.dio.close(force: true));
+    return request;
+  }
+
+  final invalidMetadata = hasReleaseRedirect
+      ? throwsA(isA<FormatException>())
+      : completion(isNull);
+
+  test('compares build codes for same-app-version core updates', () async {
+    for (final code in [1000000021, 1000000020, 1000000019]) {
+      final release = {
+        'tag_name': _tag,
+        'body': 'Release notes\n\nAndroid version code: $code\n',
+      };
+      final adapter = _ReleaseAdapter({_api: _json(release)});
+
+      expect(
+        await answering(adapter).checkForUpdate(),
+        code > 1000000020 ? release : isNull,
+      );
+      expect(adapter.urls, [_api]);
+    }
+  });
+
+  test('pins missing-body metadata to this repository and release tag', () async {
+    for (final body in [null, '']) {
+      final adapter = _ReleaseAdapter({
+        _api: _json({
+          'tag_name': _tag,
+          'body': body,
+          'assets': [
+            {
+              'name': 'BUILD-PROVENANCE.json',
+              'browser_download_url': 'https://untrusted.example/metadata.json',
+            },
+          ],
+        }),
+        _metadata: _json(
+          {'version_code': 1000000021},
+          contentType: 'application/octet-stream',
+        ),
+      });
+
+      final release = await answering(adapter).checkForUpdate();
+
+      expect(release?['tag_name'], _tag);
+      expect(adapter.urls, [_api, _metadata]);
+    }
+  });
+
+  test('rejects nonempty bodies without a valid build code', () async {
+    for (final body in [
+      'Release notes only',
+      'Android version code: invalid',
+      'Android version code: -1',
+      'Android version code: 0',
+      'Android version code: 2100000000',
+    ]) {
+      final adapter = _ReleaseAdapter({
+        _api: _json({'tag_name': _tag, 'body': body}),
+      });
+
+      await expectLater(answering(adapter).checkForUpdate(), invalidMetadata);
+      expect(adapter.urls, [_api]);
+    }
+  });
+
+  test('metadata requires an integer build code within Android limits', () async {
+    for (final metadata in [
+      null,
+      <Object?>[],
+      'not an object',
+      <String, Object?>{},
+      {'version_code': null},
+      {'version_code': '1000000021'},
+      {'version_code': 1000000021.0},
+      {'version_code': true},
+      {'version_code': 0},
+      {'version_code': -1},
+      {'version_code': 2100000000},
+    ]) {
+      final adapter = _ReleaseAdapter({
+        _api: _json({'tag_name': _tag}),
+        _metadata: _json(metadata, contentType: 'application/octet-stream'),
+      });
+
+      await expectLater(answering(adapter).checkForUpdate(), invalidMetadata);
+      expect(adapter.urls, [_api, _metadata]);
+    }
+  });
+
+  test('rejects malformed JSON downloaded as an octet stream', () async {
+    final adapter = _ReleaseAdapter({
+      _api: _json({'tag_name': _tag}),
+      _metadata: ResponseBody.fromString(
+        '{not valid JSON',
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/octet-stream'],
+        },
+      ),
+    });
+
+    await expectLater(answering(adapter).checkForUpdate(), invalidMetadata);
+    expect(adapter.urls, [_api, _metadata]);
+  });
+
+  test(
+    'API quota fallback reads pinned metadata and exposes invalid metadata',
+    () async {
+      for (final metadata in [
+        {'version_code': 1000000021},
+        {'version_code': '1000000021'},
+      ]) {
+        final adapter = _ReleaseAdapter({
+          _api: ResponseBody.fromString('{}', 403),
+          _page: ResponseBody.fromString(
+            '',
+            302,
+            headers: {
+              HttpHeaders.locationHeader: [
+                'https://github.com/aldington-david/FlClash/releases/tag/$_tag',
+              ],
+            },
+          ),
+          _metadata: _json(metadata, contentType: 'application/octet-stream'),
+        });
+
+        final check = answering(adapter).checkForUpdate();
+        if (metadata['version_code'] is int) {
+          expect((await check)?['tag_name'], _tag);
+        } else {
+          await expectLater(check, throwsA(isA<FormatException>()));
+        }
+        expect(adapter.urls, [_api, _page, _metadata]);
+      }
+    },
+    skip: !hasReleaseRedirect,
+  );
+}

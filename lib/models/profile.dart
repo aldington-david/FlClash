@@ -94,7 +94,9 @@ abstract class Profile with _$Profile {
       label: label ?? '',
       url: url,
       id: id,
-      autoUpdateDuration: defaultUpdateDuration,
+      autoUpdateDuration: url.isEmpty
+          ? defaultUpdateDuration
+          : const Duration(hours: 6),
     );
   }
 

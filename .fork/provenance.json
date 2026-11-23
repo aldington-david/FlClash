@@ -1,0 +1,20 @@
+{
+  "app_repository": "chen08209/FlClash",
+  "app_tag": "v0.9.4",
+  "app_sha": "89791d7c11978bf9b580ba71bffcb00506a17659",
+  "core_repository": "aldington-david/mihomo",
+  "core_tag": "v1.19.34",
+  "core_sha": "aa2551ae4d72479551d63bb20b7130e0ad430d64",
+  "compatibility_repository": "chen08209/Clash.Meta",
+  "compatibility_sha": "5b453f80dbcee6b3ecfb0415bcace24a48c88707",
+  "compatibility_base_sha": "0455d0d28c4526937380505153e65a843d8612e8",
+  "compatibility_patch_sha256": "c43e4a68a74c4d74e246b81069fb6300ee30f90a74a3e16b0fcfc606d890f2a1",
+  "version_code": 1000000255,
+  "fork_revision": 5,
+  "display_name": "IFlClash",
+  "overlay_sha256": "9f4f39b791970fee51c42719877974b0b6f8531b9e1bcf4017571f29d45f0657",
+  "firebase_disabled": true,
+  "flutter_version": "3.50.0",
+  "go_version": "1.27.1",
+  "ndk_version": "r28c"
+}

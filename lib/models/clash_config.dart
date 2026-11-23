@@ -1150,7 +1150,7 @@ abstract class Tun with _$Tun {
       name: 'congestion-controller',
       fromJson: _congestionControllerFromJson,
     )
-    @Default(defaultCongestionController)
+    @Default('bbr3')
     String congestionController,
     @JsonKey(name: 'route-exclude-address')
     @Default([])
@@ -1629,7 +1629,8 @@ Map<String, Object?> _withLegacyTunOverride(Map<String, Object?> json) {
     'tun-override': override.toJson(),
     _tunOverrideKeysJsonKey: [
       if (tun.mtu != defaultTunMtu) TunOverrideKey.mtu.path,
-      if (tun.congestionController != defaultCongestionController)
+      if (raw['congestion-controller'] != null &&
+          tun.congestionController != defaultCongestionController)
         TunOverrideKey.congestionController.path,
       if (override.strictRoute) TunOverrideKey.strictRoute.path,
       if (tun.routeAddress.isNotEmpty) TunOverrideKey.routeAddress.path,
@@ -2142,7 +2143,7 @@ abstract class PatchClashConfig with _$PatchClashConfig {
     @Default(Mode.rule) Mode mode,
     @Default(false) @JsonKey(name: 'allow-lan') bool allowLan,
     @Default(LogLevel.error) @JsonKey(name: 'log-level') LogLevel logLevel,
-    @Default(false) bool ipv6,
+    @Default(true) bool ipv6,
     @Default(FindProcessMode.strict)
     @JsonKey(
       name: 'find-process-mode',
@@ -2194,7 +2195,12 @@ abstract class PatchClashConfig with _$PatchClashConfig {
     @Default(true) @JsonKey(name: 'geo-auto-update') bool geoAutoUpdate,
     @Default(24) @JsonKey(name: 'geo-update-interval') int geoUpdateInterval,
     @Default(defaultTestUrl) @JsonKey(name: 'test-url') String testUrl,
-    @Default({})
+    @Default({
+      GeneralOverrideKey.unifiedDelay,
+      GeneralOverrideKey.tcpConcurrent,
+      GeneralOverrideKey.ipv6,
+      GeneralOverrideKey.geodataLoader,
+    })
     @JsonKey(
       name: _generalOverrideKeysJsonKey,
       fromJson: _generalOverrideKeysFromJson,

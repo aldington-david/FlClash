@@ -122,7 +122,7 @@ class _PrimaryColorItem extends ConsumerWidget {
       return state.copyWith(
         primaryColors: defaultPrimaryColors,
         primaryColor: defaultPrimaryColor,
-        colorStyle: ColorStyle.vivid,
+        colorStyle: defaultThemeProps.colorStyle,
       );
     });
   }
@@ -240,7 +240,7 @@ class _PrimaryColorItem extends ConsumerWidget {
                 state.primaryColors,
                 defaultPrimaryColors,
               ) &&
-              state.colorStyle == ColorStyle.vivid,
+              state.colorStyle == defaultThemeProps.colorStyle,
         ),
       ),
     );

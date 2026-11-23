@@ -29,6 +29,7 @@ String nightlyReleaseVersion(String base, DateTime commitDate, String commit) {
 }
 
 final _version = RegExp(r'^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$');
+final _forkVersion = RegExp(r'^\d+\.\d+\.\d+-anytls-v\d+\.\d+\.\d+-r\d+$');
 
 String _checkedVersion(String version) {
   if (!_version.hasMatch(version)) {
@@ -45,6 +46,14 @@ String releaseAssetName({
   ReleaseForm? form,
   required String extension,
 }) {
+  if (line == ReleaseLine.dev &&
+      _forkVersion.hasMatch(version) &&
+      os == ReleaseOs.android &&
+      arch == ReleaseArch.arm64 &&
+      form == null &&
+      extension == 'apk') {
+    return '$releaseFilePrefix-$version-android-arm64-v8a.apk';
+  }
   final parts = [
     releaseFilePrefix,
     line.name,
@@ -57,5 +66,8 @@ String releaseAssetName({
 }
 
 String releaseChecksumsName(ReleaseLine line, String version) {
+  if (line == ReleaseLine.dev && _forkVersion.hasMatch(version)) {
+    return 'SHA256SUMS';
+  }
   return '$releaseFilePrefix-${line.name}-${_checkedVersion(version)}-SHA256SUMS';
 }
